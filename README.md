@@ -121,7 +121,7 @@ A successful connection test checks a small request. It does not guarantee a lar
 | Provider | Key source | Default model in this repository |
 |---|---|---|
 | Groq | [Groq console](https://console.groq.com/keys) | `qwen/qwen3.8-27b` |
-| Gemini | [Google AI Studio](https://aistudio.google.com/api-keys) | `gemini-3.8-flash` |
+| Gemini | [Google AI Studio](https://aistudio.google.com/api-keys) | `gemini-3.6-flash` |
 
 Model IDs are editable defaults, not a promise of access or uptime. Choose a model your account supports. Keys do not have a single fixed model attached to them: the application sends the selected model with each request.
 

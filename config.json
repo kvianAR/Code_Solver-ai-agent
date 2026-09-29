@@ -22,7 +22,7 @@
   "autoContestDurationMinutes": 90,
   "autoContestQuestionCount": 4,
   "providerOrder": ["groq", "gemini"],
-  "models": {"groq": "qwen/qwen3.8-27b", "gemini": "gemini-3.8-flash"},
+  "models": {"groq": "qwen/qwen3.8-27b", "gemini": "gemini-3.6-flash"},
   "platform": {"type": "sandbox", "baseUrl": ""},
   "judge": {"timeoutSeconds": 12, "memoryMB": 128, "cpus": 0.5},
   "notificationWebhook": ""
