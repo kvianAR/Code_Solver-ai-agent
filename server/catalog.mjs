@@ -1,0 +1,38 @@
+// Ordered foundational-to-advanced roadmap. Cases are judged outside the code container.
+const specs = [
+ ['two-sum','Two Sum','Easy','Arrays','Return indices [i,j], i<j, whose numbers sum to target. Exactly one answer.',{nums:[2,7,11,15],target:9},[0,1],{nums:[3,2,4],target:6},[1,2]],
+ ['contains-duplicate','Contains Duplicate','Easy','Hash Maps','Return true if nums contains duplicate values.',{nums:[1,2,3,1]},true,{nums:[1,2,3]},false],
+ ['valid-anagram','Valid Anagram','Easy','Strings','Return whether lowercase strings s and t are anagrams.',{s:'anagram',t:'nagaram'},true,{s:'rat',t:'car'},false],
+ ['valid-palindrome','Valid Palindrome','Easy','Two Pointers','Ignore non-alphanumeric characters and case; return whether s is a palindrome.',{s:'A man, a plan, a canal: Panama'},true,{s:'race a car'},false],
+ ['best-time-stock','Best Time to Buy and Sell Stock','Easy','Arrays','Return maximum profit from one buy then later sell; otherwise 0.',{prices:[7,1,5,3,6,4]},5,{prices:[7,6,4,3,1]},0],
+ ['binary-search','Binary Search','Easy','Binary Search','Return target index in sorted nums, or -1.',{nums:[-1,0,3,5,9,12],target:9},4,{nums:[],target:2},-1],
+ ['valid-parentheses','Valid Parentheses','Easy','Stack','Return whether s of ()[]{} is correctly nested and balanced.',{s:'([])'},true,{s:'([)]'},false],
+ ['merge-sorted','Merge Sorted Arrays','Easy','Two Pointers','Return a sorted array containing all elements of sorted arrays a and b.',{a:[1,2,3],b:[2,5,6]},[1,2,2,3,5,6],{a:[],b:[1]},[1]],
+ ['move-zeroes','Move Zeroes','Easy','Arrays','Return nums with all zeroes at the end, preserving other order.',{nums:[0,1,0,3,12]},[1,3,12,0,0],{nums:[0,0]},[0,0]],
+ ['single-number','Single Number','Easy','Bit Manipulation','Every integer appears twice except one; return that number.',{nums:[4,1,2,1,2]},4,{nums:[-1,3,3]},-1],
+ ['missing-number','Missing Number','Easy','Arrays','nums contains distinct numbers from 0..n with one missing; return it.',{nums:[3,0,1]},2,{nums:[0,1]},2],
+ ['majority-element','Majority Element','Easy','Arrays','Return the value appearing more than floor(n/2) times; guaranteed to exist.',{nums:[2,2,1,1,1,2,2]},2,{nums:[3]},3],
+ ['climbing-stairs','Climbing Stairs','Easy','Dynamic Programming','Return number of ways to climb n stairs with steps of 1 or 2. 1<=n<=35.',{n:3},3,{n:5},8],
+ ['reverse-list','Reverse Linked List','Easy','Linked Lists','Linked list is encoded as values. Return its reversed values.',{values:[1,2,3,4,5]},[5,4,3,2,1],{values:[]},[]],
+ ['max-subarray','Maximum Subarray','Medium','Arrays','Return the largest sum of a nonempty contiguous subarray of nums.',{nums:[-2,1,-3,4,-1,2,1,-5,4]},6,{nums:[-3,-2,-5]},-2],
+ ['product-except-self','Product of Array Except Self','Medium','Arrays','Return products excluding each index. Do not use division.',{nums:[1,2,3,4]},[24,12,8,6],{nums:[-1,1,0,-3,3]},[0,0,9,0,0]],
+ ['longest-substring','Longest Substring Without Repeating Characters','Medium','Sliding Window','Return length of longest substring of s with no repeated characters.',{s:'abcabcbb'},3,{s:''},0],
+ ['two-sum-sorted','Two Sum II','Medium','Two Pointers','Sorted nums; return 1-based indices of the unique target pair.',{nums:[2,7,11,15],target:9},[1,2],{nums:[2,3,4],target:6},[1,3]],
+ ['container-water','Container With Most Water','Medium','Two Pointers','Return max (j-i)*min(height[i],height[j]) for i<j.',{height:[1,8,6,2,5,4,8,3,7]},49,{height:[1,1]},1],
+ ['search-rotated','Search in Rotated Sorted Array','Medium','Binary Search','Distinct ascending nums rotated at unknown pivot; return target index or -1.',{nums:[4,5,6,7,0,1,2],target:0},4,{nums:[1],target:0},-1],
+ ['daily-temperatures','Daily Temperatures','Medium','Stack','Return days until a warmer temperature for each index; 0 if none.',{temperatures:[73,74,75,71,69,72,76,73]},[1,1,4,2,1,1,0,0],{temperatures:[30,20,10]},[0,0,0]],
+ ['max-depth','Maximum Depth of Binary Tree','Easy','Trees','Binary tree in level-order array with nulls. Return depth; empty is 0.',{tree:[3,9,20,null,null,15,7]},3,{tree:[]},0],
+ ['level-order','Binary Tree Level Order Traversal','Medium','Trees','Tree in level-order array with nulls; return arrays of values per level.',{tree:[3,9,20,null,null,15,7]},[[3],[9,20],[15,7]],{tree:[]},[]],
+ ['kth-largest','Kth Largest Element','Medium','Heaps','Return kth largest value in nums, counting duplicates.',{nums:[3,2,1,5,6,4],k:2},5,{nums:[3,2,3,1,2,4,5,5,6],k:4},4],
+ ['number-islands','Number of Islands','Medium','Graphs','Grid of strings 0/1; return number of 4-directionally connected groups of 1.',{grid:[['1','1','0'],['0','1','0'],['0','0','1']]},2,{grid:[]},0],
+ ['course-schedule','Course Schedule','Medium','Graphs','Return whether all n courses can be finished. pairs [a,b] mean b before a.',{n:2,pairs:[[1,0]]},true,{n:2,pairs:[[1,0],[0,1]]},false],
+ ['unique-paths','Unique Paths','Medium','Dynamic Programming','Return paths in m x n grid from top-left to bottom-right using right/down.',{m:3,n:7},28,{m:1,n:1},1],
+ ['house-robber','House Robber','Medium','Dynamic Programming','Return max sum chosen from nums with no adjacent indices; empty gives 0.',{nums:[2,7,9,3,1]},12,{nums:[]},0],
+ ['coin-change','Coin Change','Medium','Dynamic Programming','Return minimum coins to total amount, unlimited coins; -1 if impossible.',{coins:[1,2,5],amount:11},3,{coins:[2],amount:3},-1],
+ ['word-break','Word Break','Medium','Dynamic Programming','Return whether s can be segmented into words from words, reused freely.',{s:'leetcode',words:['leet','code']},true,{s:'catsandog',words:['cats','dog','sand','and','cat']},false],
+ ['longest-increasing','Longest Increasing Subsequence','Medium','Dynamic Programming','Return length of longest strictly increasing subsequence in nums.',{nums:[10,9,2,5,3,7,101,18]},4,{nums:[7,7,7]},1],
+ ['trapping-rain','Trapping Rain Water','Hard','Two Pointers','Return total trapped rainwater between nonnegative heights.',{height:[0,1,0,2,1,0,1,3,2,1,2,1]},6,{height:[4,2,0,3,2,5]},9],
+ ['edit-distance','Edit Distance','Hard','Dynamic Programming','Return minimum insert/delete/replace operations to change a into b.',{a:'horse',b:'ros'},3,{a:'',b:'abc'},3]
+];
+export const catalog=specs.map(([id,title,difficulty,topic,statement,i,o,i2,o2],index)=>({id,title,difficulty,topic,statement,order:index,tests:[{input:i,expected:o},{input:i2,expected:o2}],examples:[{input:i,output:o}]}));
+export const publicProblem=p=>{const {tests,...rest}=p;return rest;};

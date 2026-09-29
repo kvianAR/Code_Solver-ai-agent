@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "AlgoPilot • Practice Autopilot",
+  "version": "2.0.1",
+  "description": "Daily LeetCode practice drafts, review tabs, reminders, and contest calendar.",
+  "permissions": ["storage", "alarms", "notifications", "scripting"],
+  "host_permissions": ["http://localhost/*", "http://127.0.0.1/*", "https://leetcode.com/*"],
+  "optional_host_permissions": ["https://*/*"],
+  "background": {"service_worker": "background.js", "type": "module"},
+  "content_scripts": [{"matches": ["https://leetcode.com/*"], "js": ["leetcode.js"], "run_at": "document_idle"}],
+  "action": {"default_title": "Open AlgoPilot", "default_icon": "icon.png"},
+  "icons": {"128": "icon.png"},
+  "options_page": "dashboard.html",
+  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'self'"}
+}

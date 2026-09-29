@@ -1,0 +1,14 @@
+services:
+  agent:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - ./data:/app/data
+      - ./config.json:/app/config.json:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+    stop_grace_period: 20s

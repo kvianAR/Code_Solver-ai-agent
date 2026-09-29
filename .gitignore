@@ -1,0 +1,9 @@
+data/
+.env
+node_modules/
+*.log
+.env.*
+!.env.example
+.DS_Store
+*.key
+com.daily-solver.agent.plist

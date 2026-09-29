@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AlgoPilot</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<aside>
+<a class="brand" href="#today">
+<span class="logo">S</span>
+<span>AlgoPilot<small>YOUR PRACTICE AUTOPILOT</small>
+</span>
+</a>
+<nav>
+<button data-page="today" class="active">◉ &nbsp; Today</button>
+<button data-page="plan">▦ &nbsp; Two-week plan</button>
+<button data-page="contests">⚑ &nbsp; LeetCode contests</button>
+<button data-page="history">↗ &nbsp; Solution history</button>
+<button data-page="settings">⚙ &nbsp; Settings & keys</button>
+</nav>
+<div class="aside-foot">
+<span id="connection-dot" class="dot">
+</span>
+<span id="connection-status">Not connected</span>
+<small>Automatic and manual practice.<br>Contest timetable from LeetCode.</small>
+</div>
+</aside>
+<main>
+<header>
+<span id="breadcrumb">WORKSPACE / TODAY</span>
+<button id="refresh" class="quiet">↻ Refresh</button>
+</header>
+<div id="toast" role="status" hidden>
+</div>
+<section id="connect-panel" class="card connect">
+<div>
+<span class="eyebrow">ONE-TIME SETUP</span>
+<h2>Connect your agent</h2>
+<p>Enter your server address and connection token. AI keys stay on the server.</p>
+</div>
+<form id="connect-form">
+<label>Server URL<input id="server-url" type="url" value="http://localhost:8787" required>
+</label>
+<label>Connection token<input id="connection-token" type="password" autocomplete="off" required>
+</label>
+<button class="primary">Connect</button>
+</form>
+</section>
+<div id="workspace" hidden>
+<section class="page" id="page-today">
+<div class="page-title">
+<div>
+<span class="eyebrow" id="today-date">TODAY</span>
+<h1>Keep the momentum.</h1>
+<p>Daily questions, prepared for your review.</p>
+</div>
+<div class="session-controls">
+<label class="manual-count">Questions<input id="manual-count" type="number" min="1" max="100" value="2" inputmode="numeric"></label>
+<button id="run-now" class="primary">▶ Prepare 2 now</button>
+<button id="stop-solving" class="quiet" disabled>■ Stop</button>
+</div>
+</div>
+<div class="stats">
+<article class="card">
+<span>Today's progress</span>
+<strong id="daily-count">0 / 2</strong>
+<small id="daily-status">Scheduled</small>
+</article>
+<article class="card">
+<span>Practice streak</span>
+<strong id="streak">0 <em>days</em>
+</strong>
+<small>Days completed by your reviewed submissions</small>
+</article>
+<article class="card">
+<span>Daily start</span>
+<strong id="start-time">10:00 <em>AM</em>
+</strong>
+<small id="timezone-label">Asia/Kolkata</small>
+</article>
+<article class="card">
+<span>Tokens today</span>
+<strong id="token-count">0</strong>
+<small id="token-budget">Budget</small>
+</article>
+</div>
+<div class="card session-panel">
+<strong id="live-session-status">Practice preparation</strong>
+<p id="live-session-help">Prepare creates solution drafts and opens the questions for your review. It never submits to LeetCode.</p>
+</div>
+<div class="section-label">
+<h2>Automatic daily questions</h2>
+<span id="auto-label" class="pill">Auto mode</span>
+</div>
+<div id="today-tasks" class="task-grid">
+</div>
+<div id="manual-section" hidden>
+<div class="section-label">
+<h2>Latest manual session</h2>
+<span id="manual-status" class="pill">
+</span>
+</div>
+<div id="manual-tasks" class="task-grid">
+</div>
+</div>
+<div class="section-label">
+<h2>Activity & notifications</h2>
+<span class="muted">Failures stay visible until resolved</span>
+</div>
+<div id="notifications" class="card list">
+</div>
+</section>
+<section class="page" id="page-plan" hidden>
+<div class="page-title">
+<div>
+<span class="eyebrow">ROLLING 14-DAY ROADMAP</span>
+<h1>A plan that moves with you.</h1>
+<p>Refreshed every Monday. QOTD is selected on the day.</p>
+</div>
+<button id="refresh-plan" class="primary">Refresh plan</button>
+</div>
+<div id="plan-days" class="plan-grid">
+</div>
+</section>
+<section class="page" id="page-contests" hidden>
+<div class="page-title">
+<div>
+<span class="eyebrow">LIVE LEETCODE CALENDAR</span>
+<h1>This week's contests.</h1>
+<p>Day and time come directly from LeetCode. The contest page opens automatically at its official start.</p>
+</div>
+<button id="refresh-contests" class="primary">↻ Refresh contests</button>
+</div>
+<div id="auto-contest-summary" class="card">
+</div>
+<div id="contest-list" class="stack">
+</div>
+</section>
+<section class="page" id="page-history" hidden>
+<div class="page-title">
+<div>
+<span class="eyebrow">ACCEPTED RESULTS & ATTEMPTS</span>
+<h1>Every session, accounted for.</h1>
+<p>AI-assisted practice results from your connected test platform.</p>
+</div>
+</div>
+<div id="history" class="stack">
+</div>
+</section>
+<section class="page" id="page-settings" hidden>
+<div class="page-title">
+<div>
+<span class="eyebrow">YOUR AGENT, YOUR SETTINGS</span>
+<h1>Make it work your way.</h1>
+<p>Changes are also editable in config.json for a fresh installation.</p>
+</div>
+</div>
+<form id="settings-form" class="card">
+<h2>Daily schedule & solving</h2>
+<div class="form-grid">
+<label>Start time<input name="dailyStartTime" type="time" required>
+</label>
+<label>Timezone<input name="timezone" value="Asia/Kolkata" required>
+</label>
+<label>Questions / day<input name="dailyQuestionCount" type="number" min="1" max="10" required>
+</label>
+<label>Language<select name="language">
+<option value="python">Python</option>
+<option value="javascript">JavaScript</option>
+</select>
+</label>
+<label>Max attempts<input name="maxAttempts" type="number" min="1" max="8" required>
+</label>
+<label>Daily token budget<input name="dailyTokenBudget" type="number" min="1000" max="1000000" required>
+</label>
+<label>Provider order<select name="providerOrder">
+<option value="groq,gemini">Groq → Gemini</option>
+<option value="gemini,groq">Gemini → Groq</option>
+</select>
+</label>
+<label>Notification webhook (optional)<input name="notificationWebhook" type="url" placeholder="https://your-notification-service/... ">
+</label>
+</div>
+<div class="checks">
+<label>
+<input name="autoMode" type="checkbox"> Run automatically at the selected time</label>
+<label>
+<input name="preferQuestionOfTheDay" type="checkbox"> Include QOTD when it is untouched and eligible</label>
+<label>
+<input name="enforceUsername" type="checkbox"> Only use the configured LeetCode account</label>
+</div>
+<div class="checks">
+<span>Allowed difficulties:</span>
+<label>
+<input name="Easy" type="checkbox"> Easy</label>
+<label>
+<input name="Medium" type="checkbox"> Medium</label>
+<label>
+<input name="Hard" type="checkbox"> Hard</label>
+</div>
+<button class="primary">Save settings</button>
+<p class="muted">Question count applies to automatic draft preparation. Manual Prepare uses the custom count on the Today page (1–100). Final LeetCode submission always stays with you.</p>
+</form>
+<div class="card">
+<h2>Run while this Mac is sleeping</h2>
+<p>One-time macOS setup is required so the computer can wake five minutes before daily practice and official contests. Keep Brave open before sleep.</p>
+<pre>npm run background:install</pre>
+<small>This requires the Mac administrator password. It wakes from sleep; it cannot run while fully powered off.</small>
+</div>
+<div id="provider-cards" class="stack">
+</div>
+<form id="platform-form" class="card">
+<h2>Question platform</h2>
+<p>Built-in sandbox includes a foundations-to-advanced roadmap. Connect your own API for real daily questions and contests.</p>
+<div class="form-grid">
+<label>Platform<select name="type">
+<option value="sandbox">Built-in test sandbox</option>
+<option value="http">My test platform API</option>
+</select>
+</label>
+<label>API base URL<input name="baseUrl" placeholder="https://my-platform.example/api">
+</label>
+<label>Platform API key (optional)<input name="key" type="password" autocomplete="off" placeholder="Leave blank to keep existing key">
+</label>
+</div>
+<button class="primary">Save platform</button>
+</form>
+<button id="disconnect" class="quiet">Disconnect this browser</button>
+</section>
+</div>
+<footer>AlgoPilot · Scheduled drafts · Review before submission</footer>
+</main>
+<script src="app.js">
+</script>
+</body>
+</html>

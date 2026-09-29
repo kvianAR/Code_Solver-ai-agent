@@ -1,0 +1,54 @@
+(() => {
+  if (globalThis.__dailySolverLeetCodeBridge) return;
+  globalThis.__dailySolverLeetCodeBridge = true;
+  const ROADMAP = [
+    'contains-duplicate','valid-anagram','valid-palindrome','best-time-to-buy-and-sell-stock','binary-search','valid-parentheses','merge-sorted-array','remove-duplicates-from-sorted-array','move-zeroes','majority-element','intersection-of-two-arrays','single-number','missing-number','reverse-string','first-unique-character-in-a-string','ransom-note','isomorphic-strings','word-pattern','linked-list-cycle','middle-of-the-linked-list','reverse-linked-list','merge-two-sorted-lists','maximum-depth-of-binary-tree','same-tree','invert-binary-tree','symmetric-tree','diameter-of-binary-tree','balanced-binary-tree','flood-fill','number-of-islands','climbing-stairs','min-cost-climbing-stairs','house-robber','maximum-subarray','product-of-array-except-self','top-k-frequent-elements','group-anagrams','longest-substring-without-repeating-characters','three-sum','container-with-most-water','search-in-rotated-sorted-array','find-minimum-in-rotated-sorted-array','combination-sum','permutations','subsets','word-search','validate-binary-search-tree','binary-tree-level-order-traversal','lowest-common-ancestor-of-a-binary-search-tree','kth-smallest-element-in-a-bst','course-schedule','clone-graph','rotting-oranges','coin-change','longest-increasing-subsequence','unique-paths','decode-ways','longest-common-subsequence','merge-intervals','insert-interval','trapping-rain-water','minimum-window-substring','median-of-two-sorted-arrays','serialize-and-deserialize-binary-tree','word-ladder'
+  ];
+  async function graphql(query, variables = {}) {
+    const response = await fetch('/graphql/', {method:'POST',credentials:'include',headers:{'content-type':'application/json','x-requested-with':'XMLHttpRequest'},body:JSON.stringify({query,variables})});
+    if (!response.ok) throw Error(`LeetCode connection failed (${response.status})`);
+    const value=await response.json();if(value.errors?.length)throw Error(value.errors[0].message||'LeetCode GraphQL error');return value.data;
+  }
+  const QUESTION_QUERY=`query questionData($titleSlug: String!) { question(titleSlug: $titleSlug) { questionId questionFrontendId title titleSlug content difficulty isPaidOnly status codeSnippets { lang langSlug code } topicTags { name slug } } }`;
+  const DAILY_QUERY=`query questionOfToday { activeDailyCodingChallengeQuestion { date link question { title titleSlug difficulty isPaidOnly } } }`;
+  const LIST_QUERY=`query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $filters: QuestionListFilterInput) { problemsetQuestionList: questionList(categorySlug: $categorySlug, limit: $limit, skip: $skip, filters: $filters) { total questions { titleSlug difficulty paidOnly: isPaidOnly status } } }`;
+  const USER_QUERY=`query globalData { userStatus { isSignedIn username } }`;
+  const CONTEST_QUERY=`query contestUpcomingContests { contestV2UpcomingContests { title titleSlug startTime duration } }`;
+  function plainText(html){const doc=new DOMParser().parseFromString(String(html||''),'text/html');doc.querySelectorAll('script,style').forEach(n=>n.remove());return(doc.body.textContent||'').replace(/\n\s*\n\s*\n+/g,'\n\n').trim();}
+  async function question(slug,language){const q=(await graphql(QUESTION_QUERY,{titleSlug:slug})).question;if(!q)return null;const langSlug=language==='javascript'?'javascript':'python3',snippet=q.codeSnippets?.find(x=>x.langSlug===langSlug)||q.codeSnippets?.[0];return{id:q.questionId,frontendId:q.questionFrontendId,title:q.title,titleSlug:q.titleSlug,difficulty:q.difficulty,paidOnly:!!q.isPaidOnly,status:q.status||null,statement:plainText(q.content),starterCode:snippet?.code||'',langSlug:snippet?.langSlug||langSlug,topics:(q.topicTags||[]).map(x=>x.name)};}
+  function shuffle(values){const result=[...values];for(let i=result.length-1;i>0;i--){const bytes=new Uint32Array(1);crypto.getRandomValues(bytes);const j=bytes[0]%(i+1);[result[i],result[j]]=[result[j],result[i]];}return result;}
+  async function problemsetSlugs(allowed,seen,wanted){
+    const candidates=[];
+    try{
+      for(let skip=0;skip<1000&&candidates.length<wanted*3;skip+=100){
+        const list=(await graphql(LIST_QUERY,{categorySlug:'',skip,limit:100,filters:{}})).problemsetQuestionList;
+        for(const item of list?.questions||[])if(item?.titleSlug&&!seen.has(item.titleSlug)&&!item.paidOnly&&item.status==null&&allowed.has(item.difficulty))candidates.push(item.titleSlug);
+        if(!list||skip+100>=list.total)break;
+      }
+    }catch{}
+    return shuffle(candidates);
+  }
+  async function discover(options){
+    const user=(await graphql(USER_QUERY)).userStatus;if(!user?.isSignedIn)throw Error('Brave me LeetCode login required');
+    if(options.enforceUsername&&options.username&&user.username.toLowerCase()!==options.username.toLowerCase())throw Error(`Wrong LeetCode account: ${user.username}. Expected ${options.username}.`);
+    const allowed=new Set(options.allowedDifficulties||['Easy','Medium','Hard']),chosen=[],seen=new Set(options.excludeSlugs||[]);
+    if(options.preferQuestionOfTheDay){const daily=(await graphql(DAILY_QUERY)).activeDailyCodingChallengeQuestion?.question;if(daily?.titleSlug){const full=await question(daily.titleSlug,options.language);if(full&&!seen.has(full.titleSlug)&&!full.paidOnly&&full.status==null&&allowed.has(full.difficulty)){full.selection='QOTD';chosen.push(full);seen.add(full.titleSlug);}}}
+    const completed=Math.max(0,Number(options.completedCount)||0),start=Math.min(Math.floor(completed/10)*10,Math.max(0,ROADMAP.length-20));
+    const ordered=[...shuffle(ROADMAP.slice(start,start+20)),...shuffle(ROADMAP.slice(0,start)),...shuffle(ROADMAP.slice(start+20))];
+    for(const slug of ordered){if(chosen.length>=options.count)break;if(seen.has(slug))continue;const q=await question(slug,options.language);if(q&&!q.paidOnly&&q.status==null&&allowed.has(q.difficulty)){q.selection='ROADMAP';chosen.push(q);seen.add(slug);}}
+    if(chosen.length<options.count){
+      const slugs=await problemsetSlugs(allowed,seen,options.count-chosen.length);
+      for(const slug of slugs){
+        if(chosen.length>=options.count)break;
+        const q=await question(slug,options.language);
+        if(q&&!seen.has(q.titleSlug)&&!q.paidOnly&&q.status==null&&allowed.has(q.difficulty)){q.selection='RANDOM';chosen.push(q);seen.add(q.titleSlug);}
+      }
+    }
+    if(!chosen.length)throw Error('No untouched eligible LeetCode question found');return{username:user.username,questions:chosen};
+  }
+  async function contests(){
+    const data=await graphql(CONTEST_QUERY),now=Date.now(),week=now+7*86400000;
+    return (data.contestV2UpcomingContests||[]).map(c=>({id:c.titleSlug,title:c.title,titleSlug:c.titleSlug,startAt:new Date(c.startTime*1000).toISOString(),endAt:new Date((c.startTime+c.duration)*1000).toISOString(),durationSeconds:c.duration,url:`https://leetcode.com/contest/${c.titleSlug}/`})).filter(c=>new Date(c.startAt).getTime()>=now-2*3600000&&new Date(c.startAt).getTime()<=week).sort((a,b)=>new Date(a.startAt)-new Date(b.startAt));
+  }
+  chrome.runtime.onMessage.addListener((message,_sender,sendResponse)=>{if(!['leetcode-discover','leetcode-session','leetcode-contests'].includes(message?.type))return;(async()=>{if(message.type==='leetcode-discover')return discover(message.options||{});if(message.type==='leetcode-contests')return contests();const user=(await graphql(USER_QUERY)).userStatus;return{signedIn:!!user?.isSignedIn,username:user?.username||''};})().then(value=>sendResponse({ok:true,value})).catch(error=>sendResponse({ok:false,error:error.message}));return true;});
+})();
