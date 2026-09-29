@@ -1,8 +1,8 @@
 <div align="center">
 
-![AlgoPilot — your practice autopilot](docs/assets/banner.svg)
+![LeetCode AI Agent — your practice autopilot](docs/assets/banner.svg)
 
-# AlgoPilot ✨
+# LeetCode AI Agent ✨
 
 **Build your coding habit. Let AI prepare the next practice session.**
 
@@ -19,15 +19,15 @@ Scheduled LeetCode practice drafts · Manual batches · Review-first workflow ·
 
 ---
 
-AlgoPilot is a local AI practice assistant with a Brave/Chrome extension. Choose a time and a question count: it discovers untouched LeetCode problems, prepares solution drafts with **Groq or Gemini**, checks their syntax, saves explanations, and opens the problems for review.
+LeetCode AI Agent is a local AI practice assistant with a Brave/Chrome extension. Choose a time and a question count: it discovers untouched LeetCode problems, prepares solution drafts with **Groq or Gemini**, checks their syntax, saves explanations, and opens the problems for review.
 
-**You review, test, and submit the solution yourself.** AlgoPilot does not automatically submit to LeetCode or solve live rated contests. Draft preparation does not increase your official LeetCode streak.
+**You review, test, and submit the solution yourself.** LeetCode AI Agent does not automatically submit to LeetCode or solve live rated contests. Draft preparation does not increase your official LeetCode streak.
 
 > **Project status: experimental.** This is an unpacked extension, not a Chrome Web Store release. LeetCode session APIs and provider model availability can change. Syntax checks do not prove solution correctness. Live API generation depends on your account access, quota, and provider uptime.
 
 ## How it works
 
-![AlgoPilot workflow](docs/assets/workflow.svg)
+![LeetCode AI Agent workflow](docs/assets/workflow.svg)
 
 The visuals above are illustrations of the workflow, not screenshots or evidence of successful submissions.
 
@@ -76,8 +76,8 @@ Requirements:
 - Docker only if you want the optional owned test sandbox; it is not required for live draft preparation.
 
 ```bash
-git clone https://github.com/kvianAR/algopilot.git
-cd algopilot
+git clone https://github.com/kvianAR/leetcode-ai-agent.git
+cd leetcode-ai-agent
 npm start
 ```
 
@@ -96,7 +96,7 @@ Keep this connection token private.
 1. Open `brave://extensions` or `chrome://extensions`.
 2. Enable **Developer mode**.
 3. Select **Load unpacked** and choose this repository's `extension/` folder.
-4. Open **AlgoPilot** from the browser toolbar.
+4. Open **LeetCode AI Agent** from the browser toolbar.
 5. Enter `http://localhost:8787` and the connection token.
 6. Keep LeetCode signed in in the same browser profile.
 
@@ -168,7 +168,7 @@ npm run wake:install
 npm run wake:uninstall
 ```
 
-**Power-setting caveat:** the current helper uses macOS's shared repeating wake schedule. Installing it replaces that repeating wake schedule; uninstalling clears it. Do not use it alongside another tool that manages repeating power events without reviewing this behavior. Contest events have their own AlgoPilot service identifiers.
+**Power-setting caveat:** the current helper uses macOS's shared repeating wake schedule. Installing it replaces that repeating wake schedule; uninstalling clears it. Do not use it alongside another tool that manages repeating power events without reviewing this behavior. Contest events have their own LeetCode AI Agent service identifiers.
 
 A same-day stopped/failed automatic run can be archived and retried when moved to a later schedule. A prepared session remains terminal for that date. Manual sessions have their own history entries.
 
@@ -218,7 +218,7 @@ npm test
 The current suite includes **38 tests**, covering schedule handling, history, retries, key encryption, budgets, HTTP authorization, draft preparation, stop behavior, settings persistence, and real local syntax parsing. Automated tests do not make paid provider calls.
 
 ```text
-algopilot/
+leetcode-ai-agent/
 ├── extension/          # Manifest V3 dashboard, discovery, background worker
 ├── server/             # Local API, encrypted storage, providers, sandbox runner
 ├── scripts/            # Connection token and macOS install/status/wake helpers
@@ -255,8 +255,8 @@ Set `leetcode.enabled` to `false` to use that sandbox workflow. Its generated co
 
 Bug reports, documentation improvements, and patches are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Never include API keys, connection tokens, cookies, or private runtime state in an issue.
 
-If AlgoPilot helps your practice routine, a ⭐ or a shared walkthrough helps others discover it.
+If LeetCode AI Agent helps your practice routine, a ⭐ or a shared walkthrough helps others discover it.
 
 ## License
 
-[MIT](LICENSE) © 2026 AlgoPilot contributors.
+[MIT](LICENSE) © 2026 LeetCode AI Agent contributors.

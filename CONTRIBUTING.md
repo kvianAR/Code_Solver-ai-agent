@@ -1,4 +1,4 @@
-# Contributing to AlgoPilot
+# Contributing to LeetCode AI Agent
 
 1. Fork the repository and create a branch for your change.
 2. Use Node.js 22+ and Python 3 for local syntax-check tests.
