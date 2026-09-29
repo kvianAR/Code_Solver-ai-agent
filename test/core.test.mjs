@@ -162,3 +162,23 @@ test('HTTP dashboard requires token, redacts keys and validates config',async t=
   assert.equal((await fetch(url+'/api/contests',{method:'POST',headers,body:JSON.stringify({name:'Owned benchmark',startAt:new Date(Date.now()+60000).toISOString(),endAt:new Date(Date.now()+120000).toISOString(),problemIds:['two-sum']})})).status,201);
   assert.equal((await fetch(url+'/')).status,200);
 });
+
+test('live practice uses Gemini backup when Groq is temporarily unavailable',async t=>{
+  const calls=[];
+  const {store,platform,agent}=fixture(t,{complete:async provider=>{
+    calls.push(provider);
+    if(provider==='groq')throw new ProviderError('Provider temporarily unavailable','temporary');
+    return {text:JSON.stringify({code:'class Solution: pass',explanation:'Draft'}),tokens:30};
+  }});
+  store.state.config.leetcode.enabled=true;
+  store.setSecret('groq','test-groq');store.setSecret('gemini','test-gemini');
+  const server=createServer(store,platform,agent);
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const response=await fetch(`http://127.0.0.1:${server.address().port}/api/leetcode/solve`,{
+    method:'POST',headers:{Authorization:`Bearer ${store.state.adminToken}`,'Content-Type':'application/json'},
+    body:JSON.stringify({problem:{title:'Example',statement:'Practice data',starterCode:'class Solution: pass'}})
+  });
+  assert.equal(response.status,200);assert.equal((await response.json()).provider,'gemini');
+  assert.deepEqual(calls,['groq','gemini']);assert.deepEqual(store.state.disabledProviders,{});
+});

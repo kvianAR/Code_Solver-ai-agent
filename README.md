@@ -215,7 +215,7 @@ Current limitation: local syntax checks do not run examples or hidden tests. A `
 npm test
 ```
 
-The current suite includes **38 tests**, covering schedule handling, history, retries, key encryption, budgets, HTTP authorization, draft preparation, stop behavior, settings persistence, and real local syntax parsing. Automated tests do not make paid provider calls.
+The current suite includes **39 tests**, covering schedule handling, history, retries, key encryption, budgets, HTTP authorization, draft preparation, stop behavior, settings persistence, and real local syntax parsing. Automated tests do not make paid provider calls.
 
 ```text
 leetcode-ai-agent/

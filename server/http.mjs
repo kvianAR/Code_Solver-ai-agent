@@ -54,16 +54,15 @@ export function createServer(store,platform,agent) {
         if(!input.problem||typeof input.problem.title!=='string'||typeof input.problem.statement!=='string'||typeof input.problem.starterCode!=='string')throw Error('Invalid LeetCode problem');
         if(input.problem.statement.length>90000||input.problem.starterCode.length>30000)throw Error('LeetCode problem is too large');
         let lastError;
-        for(let n=0;n<c.providerOrder.length;n++) {
-          const provider=agent.chooseProvider();
-          if(!provider)break;
+        for(const provider of c.providerOrder) {
+          if(!store.secret(provider)||store.state.disabledProviders[provider])continue;
           const prompt=leetcodeSolutionPrompt(input.problem,c.language,input.feedback||'');
           const date=localTime(new Date(),c.timezone).date,reserve=Math.ceil(prompt.length/3)+c.maxOutputTokens;
           const usage=store.state.usage[date]||={tokens:0,calls:0};
           if(usage.tokens+reserve>c.dailyTokenBudget)throw Error('Daily token budget reached');
           usage.tokens+=reserve;usage.calls++;store.save();
           try {
-            const result=await complete(provider,store.secret(provider),c.models[provider],prompt,c);
+            const result=await agent.complete(provider,store.secret(provider),c.models[provider],prompt,c);
             if(Number.isFinite(result.tokens)&&result.tokens>=0)usage.tokens=Math.max(0,usage.tokens-reserve+result.tokens);
             const solution=decodeSolution(result.text);store.save();send(200,{...solution,provider,language:c.language});return;
           }catch(e) {
@@ -72,6 +71,7 @@ export function createServer(store,platform,agent) {
               store.state.disabledProviders[provider]={reason:e.message,since:new Date().toISOString()};
               agent.notify(`${provider} API needs attention`,e.message+(agent.chooseProvider()?' — trying the configured backup.':' — reconnect a key to resume.'),'error','leetcode');store.save();continue;
             }
+            if(['temporary','rate'].includes(e.kind))continue;
             throw e;
           }
         }
