@@ -27,6 +27,11 @@ const runner=new LeetCodeRunner({
     if(!connection)throw Error('Connect the extension to the agent first');
     return serverApi(connection,'leetcode/verify',{code},signal);
   },
+  submit:async(problem,code,username,signal)=>{
+    const response=await leetcodeMessage({type:'leetcode-submit',problem,code,username},()=>signal?.aborted);
+    if(!response?.ok)throw Error(response?.error||'LeetCode submission failed');
+    return response.value;
+  },
   open:async problem=>{
     const url=`https://leetcode.com/problems/${problem.titleSlug}/`;
     const tabs=await chrome.tabs.query({url});

@@ -50,5 +50,31 @@
     const data=await graphql(CONTEST_QUERY),now=Date.now(),week=now+7*86400000;
     return (data.contestV2UpcomingContests||[]).map(c=>({id:c.titleSlug,title:c.title,titleSlug:c.titleSlug,startAt:new Date(c.startTime*1000).toISOString(),endAt:new Date((c.startTime+c.duration)*1000).toISOString(),durationSeconds:c.duration,url:`https://leetcode.com/contest/${c.titleSlug}/`})).filter(c=>new Date(c.startAt).getTime()>=now-2*3600000&&new Date(c.startAt).getTime()<=week).sort((a,b)=>new Date(a.startAt)-new Date(b.startAt));
   }
-  chrome.runtime.onMessage.addListener((message,_sender,sendResponse)=>{if(!['leetcode-discover','leetcode-session','leetcode-contests'].includes(message?.type))return;(async()=>{if(message.type==='leetcode-discover')return discover(message.options||{});if(message.type==='leetcode-contests')return contests();const user=(await graphql(USER_QUERY)).userStatus;return{signedIn:!!user?.isSignedIn,username:user?.username||''};})().then(value=>sendResponse({ok:true,value})).catch(error=>sendResponse({ok:false,error:error.message}));return true;});
+  const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  async function submit(problem,code,expectedUsername){
+    const user=(await graphql(USER_QUERY)).userStatus;
+    if(!user?.isSignedIn)throw Error('Brave me LeetCode login required');
+    if(expectedUsername&&user.username.toLowerCase()!==expectedUsername.toLowerCase())throw Error(`LeetCode account changed during submission: ${user.username}`);
+    const csrf=document.cookie.split('; ').find(value=>value.startsWith('csrftoken='))?.split('=').slice(1).join('=');
+    if(!csrf)throw Error('LeetCode session token unavailable. Reload the LeetCode tab and sign in again.');
+    const response=await fetch(`/problems/${encodeURIComponent(problem.titleSlug)}/submit/`,{
+      method:'POST',credentials:'include',headers:{'content-type':'application/json','x-csrftoken':decodeURIComponent(csrf),'x-requested-with':'XMLHttpRequest'},
+      body:JSON.stringify({lang:problem.langSlug||'python3',question_id:String(problem.id),typed_code:code})
+    });
+    if(!response.ok)throw Error(`LeetCode submission failed (${response.status})`);
+    const submitted=await response.json(),submissionId=submitted.submission_id||submitted.submissionId;
+    if(!submissionId)throw Error('LeetCode did not return a submission id');
+    for(let attempt=0;attempt<45;attempt++){
+      await wait(1000);
+      const check=await fetch(`/submissions/detail/${submissionId}/check/`,{credentials:'include',headers:{'x-requested-with':'XMLHttpRequest'}});
+      if(!check.ok)throw Error(`LeetCode result check failed (${check.status})`);
+      const result=await check.json();
+      if(result.state!=='SUCCESS'&&!result.status_msg)continue;
+      const accepted=result.status_msg==='Accepted'||result.status_code===10;
+      const details=[result.status_msg,result.compile_error,result.runtime_error,result.last_testcase&&`Last testcase: ${result.last_testcase}`,result.expected_output&&`Expected: ${result.expected_output}`,result.code_output&&`Output: ${result.code_output}`].filter(Boolean).join(' ');
+      return{accepted,submissionId:String(submissionId),feedback:details||'LeetCode judged the submission'};
+    }
+    throw Error('LeetCode result timed out');
+  }
+  chrome.runtime.onMessage.addListener((message,_sender,sendResponse)=>{if(!['leetcode-discover','leetcode-session','leetcode-contests','leetcode-submit'].includes(message?.type))return;(async()=>{if(message.type==='leetcode-discover')return discover(message.options||{});if(message.type==='leetcode-contests')return contests();if(message.type==='leetcode-submit')return submit(message.problem,message.code,message.username);const user=(await graphql(USER_QUERY)).userStatus;return{signedIn:!!user?.isSignedIn,username:user?.username||''};})().then(value=>sendResponse({ok:true,value})).catch(error=>sendResponse({ok:false,error:error.message}));return true;});
 })();

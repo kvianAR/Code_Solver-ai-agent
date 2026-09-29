@@ -1,5 +1,7 @@
 const $=s=>document.querySelector(s);
 const extension=typeof chrome!=='undefined'&&!!chrome.runtime?.id;
+const UI_BUILD='2.1.0';
+if(extension)chrome.storage.local.get('uiBuild').then(({uiBuild})=>{if(uiBuild!==UI_BUILD)chrome.storage.local.set({uiBuild:UI_BUILD}).then(()=>chrome.runtime.reload());});
 let connection=null,state=null,catalog=[],page='today',busy=false,leetcodeRuns={},leetcodeContests=[],liveRun=null,leetcodeAccount='',activeRunId=null,stopping=false;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pill=(text,type='')=>`<span class="pill ${type}">${esc(text)}</span>`;
@@ -23,7 +25,7 @@ function render(){
   $('#start-time').textContent=c.dailyStartTime;$('#timezone-label').textContent=c.timezone;$('#token-count').textContent=(usage?.tokens||0).toLocaleString();$('#token-budget').textContent=`${c.dailyTokenBudget.toLocaleString()} daily budget · ${usage?.calls||0} calls`;$('#auto-label').textContent=c.autoMode?'Auto Mode ON':'Auto Mode paused';$('#run-now').textContent=c.leetcode?.enabled?`▶ Prepare ${getManualCount()} now`:"▶ Run today's session";$('#run-now').disabled=c.leetcode?.enabled?(!extension||!!activeRunId):(!c.autoMode||job?.status==='running');$('#stop-solving').hidden=!c.leetcode?.enabled;$('#stop-solving').disabled=!activeRunId||stopping;$('#stop-solving').textContent=stopping?'Stopping…':'■ Stop';
   const active=Object.values(leetcodeRuns).find(r=>(r.id||r.date)===activeRunId);
   $('#live-session-status').textContent=stopping?'Stopping draft preparation':activeRunId?`${active?.mode==='manual'?'Manual':'Automatic'} draft preparation running`:leetcodeAccount?`Ready for ${leetcodeAccount}`:'Sign in to LeetCode in this Brave profile';
-  $('#live-session-help').textContent=c.leetcode?.enabled&&!extension?'Open the Daily Solver extension in Brave to prepare practice drafts.':`Automatic: ${c.dailyStartTime} every day. Drafts are generated and syntax-checked, then problem tabs open for your review. Nothing is submitted automatically.`;
+  $('#live-session-help').textContent=c.leetcode?.enabled&&!extension?'Open the LeetCode AI Agent extension in Brave to run account submissions.':`Automatic: ${c.dailyStartTime} every day. Solutions are generated, syntax-checked, submitted to LeetCode, and retried until accepted or the attempt limit is reached.`;
   $('#retry-daily').hidden=!extension||!c.leetcode?.enabled||!leetcodeAccount||!['blocked','failed','stopped','interrupted'].includes(liveRun?.status);
   const manual=Object.values(leetcodeRuns).filter(r=>r.mode==='manual'&&r.username?.toLowerCase()===leetcodeAccount.toLowerCase()).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];
   $('#manual-section').hidden=!manual||!c.leetcode?.enabled;

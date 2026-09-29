@@ -113,7 +113,7 @@ export class LeetCodeRunner {
       run.status = 'running';
       await this.io.save(run);
       for (const task of run.tasks) {
-        while (task.status !== 'ready' && task.attempts < config.maxAttempts) {
+        while (task.status !== 'accepted' && task.attempts < config.maxAttempts) {
           if (active.stop) return await this.finishStopped(run);
           if (accountUsername && this.io.session && (await this.io.session()).toLowerCase() !== accountUsername.toLowerCase()) throw Error('LeetCode account changed during this run. Retry with the account currently signed in.');
           task.attempts++;
@@ -142,23 +142,30 @@ export class LeetCodeRunner {
             if(!task.verification.ok){task.feedback=task.verification.feedback;task.status='pending';await this.io.save(run);continue;}
           }catch(error){if(active.stop)return await this.finishStopped(run);task.verification={ok:false,feedback:`Local syntax check unavailable: ${error.message}`};}
           if(active.stop)return await this.finishStopped(run);
-          task.feedback=task.verification.feedback;
-          task.status='ready';
-          task.completedAt=this.io.now().toISOString();
-          await this.io.save(run);
-          try{await this.io.open(task.problem);}catch{}
+          task.status='submitting';await this.io.save(run);
+          try{
+            const judged=await this.io.submit(task.problem,solution.code,run.username,active.controller.signal);
+            task.feedback=judged.feedback||'';
+            if(judged.accepted){task.status='accepted';task.submissionId=judged.submissionId||'';task.completedAt=this.io.now().toISOString();await this.io.save(run);continue;}
+            task.status='pending';await this.io.save(run);
+          }catch(error){
+            if(active.stop)return await this.finishStopped(run);
+            task.feedback=error.message;task.status='pending';
+            if(/login|session|csrf|account|401|403/i.test(error.message)){task.status='blocked';break;}
+            await this.io.save(run);
+          }
         }
-        if (task.status !== 'ready' && task.status !== 'blocked') task.status = 'failed';
+        if (task.status !== 'accepted' && task.status !== 'blocked') task.status = 'failed';
         await this.io.save(run);
         if (task.status === 'blocked') break;
       }
-      const readyCount = run.tasks.filter(t => t.status === 'ready').length;
-      run.status = readyCount === run.target ? 'prepared' : run.tasks.some(t => t.status === 'blocked') ? 'blocked' : 'failed';
+      const readyCount = run.tasks.filter(t => t.status === 'accepted').length;
+      run.status = readyCount === run.target ? 'completed' : run.tasks.some(t => t.status === 'blocked') ? 'blocked' : 'failed';
       if (run.status === 'blocked') for (const task of run.tasks) if (task.status === 'pending') {task.status='skipped';task.feedback='Earlier question was blocked; retry after fixing the provider.';}
       run.finishedAt = this.io.now().toISOString();
       await this.io.save(run);
-      await this.io.notify(`leetcode-${run.id}`, run.status === 'prepared' ? 'Practice drafts ready' : 'Practice preparation needs attention',
-        `${run.mode === 'manual' ? 'Manual' : 'Automatic'}: ${readyCount}/${run.target} drafts ready for review on ${run.username}.`);
+      await this.io.notify(`leetcode-${run.id}`, run.status === 'completed' ? 'LeetCode practice completed' : 'LeetCode practice needs attention',
+        `${run.mode === 'manual' ? 'Manual' : 'Automatic'}: ${readyCount}/${run.target} accepted on ${run.username}.`);
       return run;
     } catch (error) {
       if (active.stop && run) return await this.finishStopped(run);

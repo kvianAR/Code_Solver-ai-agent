@@ -54,7 +54,7 @@
 <div>
 <span class="eyebrow" id="today-date">TODAY</span>
 <h1>Keep the momentum.</h1>
-<p>Daily questions, prepared for your review.</p>
+<p>Daily questions, generated and submitted on your signed-in account.</p>
 </div>
 <div class="session-controls">
 <label class="manual-count">Questions<input id="manual-count" type="number" min="1" max="100" value="2" inputmode="numeric"></label>
@@ -72,7 +72,7 @@
 <span>Draft streak</span>
 <strong id="streak">0 <em>days</em>
 </strong>
-<small>Days with all drafts ready. Official streak needs your submission.</small>
+<small>Days with all selected questions accepted by LeetCode.</small>
 </article>
 <article class="card">
 <span>Daily start</span>
@@ -88,7 +88,7 @@
 </div>
 <div class="card session-panel">
 <strong id="live-session-status">Practice preparation</strong>
-<p id="live-session-help">Prepare creates solution drafts and opens the questions for your review. It never submits to LeetCode.</p>
+<p id="live-session-help">The agent generates, checks, submits, and retries solutions on the signed-in LeetCode account.</p>
 </div>
 <div class="section-label">
 <h2>Automatic daily questions</h2>
@@ -200,7 +200,7 @@
 <input name="Hard" type="checkbox"> Hard</label>
 </div>
 <button class="primary">Save settings</button>
-<p class="muted">Question count applies to automatic draft preparation. Manual Prepare uses the custom count on the Today page (1–100). Final LeetCode submission always stays with you.</p>
+<p class="muted">Question count applies to automatic sessions. Manual Prepare uses the custom count on the Today page (1–100). Solutions are submitted on the currently signed-in LeetCode account.</p>
 </form>
 <div class="card">
 <h2>Run while this Mac is sleeping</h2>
@@ -229,7 +229,7 @@
 <button id="disconnect" class="quiet">Disconnect this browser</button>
 </section>
 </div>
-<footer>LeetCode AI Agent · Scheduled drafts · Review before submission</footer>
+<footer>LeetCode AI Agent · Scheduled solving · Accepted results stay in history</footer>
 </main>
 <script src="app.js">
 </script>

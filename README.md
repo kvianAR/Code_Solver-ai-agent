@@ -19,9 +19,9 @@ Scheduled LeetCode practice drafts · Manual batches · Review-first workflow ·
 
 ---
 
-LeetCode AI Agent is a local AI practice assistant with a Brave/Chrome extension. Choose a time and a question count: it discovers untouched LeetCode problems, prepares solution drafts with **Groq or Gemini**, checks their syntax, saves explanations, and opens the problems for review.
+LeetCode AI Agent is a local AI practice assistant with a Brave/Chrome extension. Choose a time and a question count: it discovers untouched LeetCode problems, generates solutions with **Groq or Gemini**, checks syntax, submits them on the signed-in account, and records LeetCode's result.
 
-**You review, test, and submit the solution yourself.** LeetCode AI Agent does not automatically submit to LeetCode or solve live rated contests. Draft preparation does not increase your official LeetCode streak.
+For daily practice sessions, the extension generates a solution, runs a local syntax check, submits it to LeetCode on the currently signed-in browser account, and retries rejected solutions up to the configured attempt limit. Live rated contests remain reminder-and-open only.
 
 > **Project status: experimental.** This is an unpacked extension, not a Chrome Web Store release. LeetCode session APIs and provider model availability can change. Syntax checks do not prove solution correctness. Live API generation depends on your account access, quota, and provider uptime.
 
@@ -39,7 +39,7 @@ flowchart LR
     D --> E[Compile-only syntax check]
     E --> F[Saved draft + explanation]
     F --> G[Open problem tabs]
-    G --> H[You review, run, and submit]
+    G --> H[Submit to LeetCode and poll result]
 ```
 
 ## Features
@@ -111,8 +111,8 @@ Open **Settings & keys**, enter the provider key and model ID, then select **Sav
 - **Manual:** enter the number of questions and click **Prepare N now**.
 - **Automatic:** set the start time, timezone, and questions/day; enable automatic mode and save. The extension uses whichever LeetCode account is signed in to that browser profile at run time.
 - If an automatic run fails, fix the provider or login issue and click **Retry today’s drafts**. Earlier failed attempts remain in history.
-- Open a ready draft's **Draft solution & explanation**, review the code, and use **Open & review on LeetCode**.
-- Paste your reviewed solution into LeetCode, run its tests, and submit when ready.
+- The extension submits each syntax-checked solution to the account currently signed in to LeetCode.
+- A rejected solution is regenerated with judge feedback until accepted or the attempt limit is reached.
 
 A successful connection test checks a small request. It does not guarantee a larger solution request will succeed.
 
@@ -171,7 +171,7 @@ npm run wake:uninstall
 
 **Power-setting caveat:** the current helper uses macOS's shared repeating wake schedule. Installing it replaces that repeating wake schedule; uninstalling clears it. Do not use it alongside another tool that manages repeating power events without reviewing this behavior. Contest events have their own LeetCode AI Agent service identifiers.
 
-A same-day stopped/failed automatic run can be archived and retried when moved to a later schedule. A prepared session remains terminal for that date. Manual sessions have their own history entries.
+A same-day stopped/failed automatic run can be archived and retried when moved to a later schedule. A completed session remains terminal for that account and date. Manual sessions have their own history entries.
 
 ## Settings
 
@@ -216,7 +216,7 @@ Current limitation: local syntax checks do not run examples or hidden tests. A `
 npm test
 ```
 
-The current suite includes **43 tests**, covering schedule handling, history, retries, key encryption, budgets, HTTP authorization, draft preparation, stop behavior, settings persistence, and real local syntax parsing. Automated tests do not make paid provider calls.
+The current suite includes **45 tests**, covering schedule handling, history, provider fallback, LeetCode submission retries, account isolation, key encryption, budgets, HTTP authorization, stop behavior, settings persistence, and local syntax parsing. Automated tests do not make paid provider calls.
 
 ```text
 leetcode-ai-agent/
@@ -229,7 +229,7 @@ leetcode-ai-agent/
 └── data/               # Runtime secrets and history (ignored by Git)
 ```
 
-The live draft flow never sends a LeetCode submission request. The optional owned sandbox is a separate workflow with a private judge. Read the [owned platform API guide](docs/platform-api.md) if you want to connect your own question system.
+The browser extension sends practice submissions through the signed-in LeetCode session and polls the official judge result. The optional owned sandbox remains a separate workflow with a private judge. Read the [owned platform API guide](docs/platform-api.md) if you want to connect your own question system.
 
 For the owned Docker sandbox:
 
