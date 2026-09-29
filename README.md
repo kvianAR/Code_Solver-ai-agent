@@ -50,7 +50,7 @@ flowchart LR
 | 🎯 Adjustable targets | Automatic daily count: 1–10; manual batch: 1–100 |
 | 🧭 Problem discovery | Foundations-to-advanced roadmap, then random eligible problems |
 | 📅 Optional QOTD | Prefer the daily challenge when untouched and within your difficulty filter |
-| 👤 Account flexibility | Uses the account signed in to the Brave/Chrome profile; optional username lock |
+| 👤 Account flexibility | Uses whichever LeetCode account is signed in to the Brave/Chrome profile; daily runs and history stay account-specific |
 | 🤖 Two AI providers | Groq and Gemini, editable model IDs, configurable fallback order |
 | 📝 Draft history | Generated code, explanation, complexity, attempt counts, and failure feedback |
 | 🔎 Syntax validation | Python compile-only parsing and JavaScript `node --check`; code is not executed |
@@ -109,7 +109,8 @@ Open **Settings & keys**, enter the provider key and model ID, then select **Sav
 ### 4. Prepare a session
 
 - **Manual:** enter the number of questions and click **Prepare N now**.
-- **Automatic:** set the start time, timezone, and questions/day; enable automatic mode and save.
+- **Automatic:** set the start time, timezone, and questions/day; enable automatic mode and save. The extension uses whichever LeetCode account is signed in to that browser profile at run time.
+- If an automatic run fails, fix the provider or login issue and click **Retry today’s drafts**. Earlier failed attempts remain in history.
 - Open a ready draft's **Draft solution & explanation**, review the code, and use **Open & review on LeetCode**.
 - Paste your reviewed solution into LeetCode, run its tests, and submit when ready.
 
@@ -193,11 +194,11 @@ A same-day stopped/failed automatic run can be archived and retried when moved t
 
 | Symptom | Check / fix |
 |---|---|
-| `No working Groq or Gemini API key` | Read provider cards and notifications for the actual quota, model, key, or connection error. Reconnect after correcting it. |
+| `No working Groq or Gemini API key` | Read provider cards and notifications for the actual quota, model, key, or connection error. Test a working key, then retry today’s drafts. Quota blocks are rechecked after 30 minutes or on the next local day. |
 | Connection passes but drafts fail | Larger requests may hit a different quota or limit. Test an actual draft; inspect its feedback. |
 | Gemini returns 404 | Check model access and ID for your account. A listed model may still reject generation. |
 | Provider temporarily unavailable | Try later or configure the other provider. Retries are bounded. |
-| Wrong LeetCode account | Uncheck the account-lock setting, or sign in to the configured account in the same browser profile. |
+| Account changed during a run | The session stops to avoid mixing accounts. Sign in to the account you want, then retry today’s drafts or start a manual session. |
 | Time saves but session does not start | Keep the local server and browser running. Check Auto Mode, today's run status, and the timezone. |
 | `Could not update the daily schedule` | Reload the extension itself and reopen its dashboard; old background code can mismatch new dashboard code. |
 | Old `Solve` button appears | Click the extension card's Reload button; reopen the toolbar dashboard. Current drafts use **Prepare**. |
@@ -215,7 +216,7 @@ Current limitation: local syntax checks do not run examples or hidden tests. A `
 npm test
 ```
 
-The current suite includes **39 tests**, covering schedule handling, history, retries, key encryption, budgets, HTTP authorization, draft preparation, stop behavior, settings persistence, and real local syntax parsing. Automated tests do not make paid provider calls.
+The current suite includes **43 tests**, covering schedule handling, history, retries, key encryption, budgets, HTTP authorization, draft preparation, stop behavior, settings persistence, and real local syntax parsing. Automated tests do not make paid provider calls.
 
 ```text
 leetcode-ai-agent/

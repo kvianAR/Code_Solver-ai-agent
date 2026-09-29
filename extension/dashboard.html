@@ -69,10 +69,10 @@
 <small id="daily-status">Scheduled</small>
 </article>
 <article class="card">
-<span>Practice streak</span>
+<span>Draft streak</span>
 <strong id="streak">0 <em>days</em>
 </strong>
-<small>Days completed by your reviewed submissions</small>
+<small>Days with all drafts ready. Official streak needs your submission.</small>
 </article>
 <article class="card">
 <span>Daily start</span>
@@ -93,6 +93,7 @@
 <div class="section-label">
 <h2>Automatic daily questions</h2>
 <span id="auto-label" class="pill">Auto mode</span>
+<button id="retry-daily" type="button" class="quiet" hidden>↻ Retry today's drafts</button>
 </div>
 <div id="today-tasks" class="task-grid">
 </div>
@@ -188,8 +189,6 @@
 <input name="autoMode" type="checkbox"> Run automatically at the selected time</label>
 <label>
 <input name="preferQuestionOfTheDay" type="checkbox"> Include QOTD when it is untouched and eligible</label>
-<label>
-<input name="enforceUsername" type="checkbox"> Only use the configured LeetCode account</label>
 </div>
 <div class="checks">
 <span>Allowed difficulties:</span>

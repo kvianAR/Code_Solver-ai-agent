@@ -132,3 +132,32 @@ test('worker recovery preserves completed results and marks unfinished work inte
   assert.equal(runs[date].tasks[0].status,'accepted');assert.equal(runs[date].tasks[1].status,'interrupted');
   runner.start(config);await runner.done;assert.equal(runs[date].status,'interrupted');
 });
+
+test('automatic sessions are separate for each signed-in LeetCode account',async()=>{
+  const {runner,runs,calls}=fixture({discover:async options=>{
+    calls.discovered.push(options);
+    return {username:options.username,questions:[{titleSlug:'same-question',title:'Same question'},{titleSlug:'second-question',title:'Second question'}]};
+  }});
+  runner.start(config,false,2,'FirstUser');await runner.done;
+  runner.start(config,false,2,'SecondUser');await runner.done;
+  assert.equal(runs['automatic:2026-09-29:firstuser'].status,'prepared');
+  assert.equal(runs['automatic:2026-09-29:seconduser'].status,'prepared');
+  assert.deepEqual(calls.discovered[1].excludeSlugs,[]);
+  assert.equal(calls.opened.length,4);
+});
+
+test('account switch while discovering blocks a session and leaves no pending tasks',async()=>{
+  const {runner,runs}=fixture();
+  runner.start(config,false,2,'DifferentUser');await runner.done;
+  const run=runs['automatic:2026-09-29:differentuser'];
+  assert.equal(run.status,'blocked');assert.match(run.feedback,/account changed/i);
+  assert.ok(run.tasks.every(t=>t.status!=='pending'));
+});
+
+test('provider block marks later questions skipped instead of pending',async()=>{
+  const {runner,runs}=fixture({solve:async()=>{throw Error('API quota or balance unavailable');}});
+  runner.start(config);await runner.done;
+  const run=runs[date];
+  assert.equal(run.status,'blocked');
+  assert.deepEqual(run.tasks.map(t=>t.status),['blocked','skipped']);
+});

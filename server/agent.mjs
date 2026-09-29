@@ -78,7 +78,16 @@ export class Agent {
       this.running.set(job.id,run);
     }
   }
-  chooseProvider() {const s=this.store.state;return s.config.providerOrder.find(p=>this.store.secret(p)&&!s.disabledProviders[p]);}
+  chooseProvider() {
+    const s=this.store.state,today=localTime(this.now(),s.config.timezone).date;
+    let changed=false;
+    for(const [provider,blocked] of Object.entries(s.disabledProviders)) {
+      const quota=blocked.kind==='quota'||blocked.reason==='API quota or balance unavailable';
+      if(quota&&blocked.since&&(localTime(new Date(blocked.since),s.config.timezone).date<today||this.now()-new Date(blocked.since)>=30*60000)){delete s.disabledProviders[provider];changed=true;}
+    }
+    if(changed)this.store.save();
+    return s.config.providerOrder.find(p=>this.store.secret(p)&&!s.disabledProviders[p]);
+  }
   async solveTask(job,task) {
     const c=this.store.state.config;
     while(task.attempts<c.maxAttempts) {
@@ -105,7 +114,7 @@ export class Agent {
       }catch(e) {
         task.feedback=e.message;
         if(['key','quota','request'].includes(e.kind)) {
-          this.store.state.disabledProviders[provider]={reason:e.message,since:this.now().toISOString()};
+          this.store.state.disabledProviders[provider]={reason:e.message,kind:e.kind,since:this.now().toISOString()};
           this.notify(`${provider} API needs attention`,e.message+(this.chooseProvider()?' — trying the configured backup.':' — reconnect a key to resume.'),'error',job.id);
           this.store.save();
           if(!this.chooseProvider()){task.status='blocked';return 'blocked';}

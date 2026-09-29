@@ -182,3 +182,11 @@ test('live practice uses Gemini backup when Groq is temporarily unavailable',asy
   assert.equal(response.status,200);assert.equal((await response.json()).provider,'gemini');
   assert.deepEqual(calls,['groq','gemini']);assert.deepEqual(store.state.disabledProviders,{});
 });
+
+test('quota-blocked provider becomes available on the next local day',t=>{
+  const {store,agent}=fixture(t,{now:()=>new Date('2026-09-30T04:30:00Z')});
+  store.setSecret('groq','test');
+  store.state.disabledProviders.groq={reason:'API quota or balance unavailable',since:'2026-09-29T13:56:38.398Z'};
+  assert.equal(agent.chooseProvider(),'groq');
+  assert.equal(store.state.disabledProviders.groq,undefined);
+});

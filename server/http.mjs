@@ -21,6 +21,7 @@ export function createServer(store,platform,agent) {
     try {
       const route=`${req.method} ${url.pathname}`;
       if(route==='GET /api/state') {
+        agent.chooseProvider(); // Recheck a previous day's quota block before the next scheduled run.
         const state=structuredClone(store.publicState());
         state.jobs=state.jobs.map(j=>({...j,tasks:j.tasks.map(t=>({...t,problem:publicProblem(t.problem)}))}));
         state.today=localTime(new Date(),store.state.config.timezone).date;
@@ -29,7 +30,9 @@ export function createServer(store,platform,agent) {
       else if(route==='POST /api/config') {
         const input=await body(req);const old=store.state.config;
         if(agent.running.size&&(['language','platform'].some(k=>JSON.stringify(input[k]??old[k])!==JSON.stringify(old[k]))))throw Error('Pause and finish active work before changing language or platform');
-        store.state.config=validateConfig({...old,...input,models:{...old.models,...input.models},platform:{...old.platform,...input.platform},judge:{...old.judge,...input.judge},leetcode:{...old.leetcode,...input.leetcode}});store.save();
+        store.state.config=validateConfig({...old,...input,models:{...old.models,...input.models},platform:{...old.platform,...input.platform},judge:{...old.judge,...input.judge},leetcode:{...old.leetcode,...input.leetcode}});
+        for(const provider of ['groq','gemini'])if(input.models?.[provider]&&input.models[provider]!==old.models[provider])delete store.state.disabledProviders[provider];
+        store.save();
         await buildPlan(store,platform,localTime(new Date(),store.state.config.timezone).date);agent.resumeBlocked();send(200,{ok:true});
       }else if(route==='POST /api/keys') {
         const {provider,key}=await body(req);if(!['groq','gemini','platform'].includes(provider))throw Error('Unknown provider');
@@ -50,6 +53,7 @@ export function createServer(store,platform,agent) {
         const j=await agent.daily(localTime(new Date(),store.state.config.timezone).date);agent.pump();send(202,{id:j.id});
       }else if(route==='POST /api/leetcode/solve') {
         const input=await body(req),c=store.state.config;
+        agent.chooseProvider();
         if(!c.leetcode?.enabled)throw Error('LeetCode browser mode is off');
         if(!input.problem||typeof input.problem.title!=='string'||typeof input.problem.statement!=='string'||typeof input.problem.starterCode!=='string')throw Error('Invalid LeetCode problem');
         if(input.problem.statement.length>90000||input.problem.starterCode.length>30000)throw Error('LeetCode problem is too large');
@@ -68,7 +72,7 @@ export function createServer(store,platform,agent) {
           }catch(e) {
             lastError=e;
             if(['key','quota','request'].includes(e.kind)) {
-              store.state.disabledProviders[provider]={reason:e.message,since:new Date().toISOString()};
+              store.state.disabledProviders[provider]={reason:e.message,kind:e.kind,since:new Date().toISOString()};
               agent.notify(`${provider} API needs attention`,e.message+(agent.chooseProvider()?' — trying the configured backup.':' — reconnect a key to resume.'),'error','leetcode');store.save();continue;
             }
             if(['temporary','rate'].includes(e.kind))continue;

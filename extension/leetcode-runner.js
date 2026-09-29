@@ -1,5 +1,11 @@
 const TERMINAL = new Set(['completed', 'prepared', 'failed', 'blocked', 'stopped', 'interrupted']);
 const ACTIVE = new Set(['discovering', 'running', 'stopping']);
+export const automaticRunKey = (date, username) => username ? `automatic:${date}:${username.toLowerCase()}` : date;
+export function dailyRunForAccount(runs, date, username) {
+  if (!username) return runs[date] || null;
+  return runs[automaticRunKey(date, username)] ||
+    (runs[date]?.username?.toLowerCase() === username.toLowerCase() ? runs[date] : null);
+}
 
 // Keep the old attempt in history, but free today's date key when the user
 // deliberately moves the schedule after a stopped/failed automatic test.
@@ -44,16 +50,16 @@ export class LeetCodeRunner {
     }
   }
 
-  start(config, manual = false, requestedCount = 2) {
+  start(config, manual = false, requestedCount = 2, accountUsername = '') {
     if (this.active) return {started: false, reason: 'A session is already running', id: this.active.id};
     if (!config.leetcode?.enabled) throw Error('Enable LeetCode browser mode first');
     const manualTarget = Math.max(1, Math.min(100, Math.trunc(Number(requestedCount) || 2)));
     const clock = localClock(config.timezone, this.io.now());
-    const id = manual ? `manual:${clock.date}:${this.io.uuid()}` : clock.date;
+    const id = manual ? `manual:${clock.date}:${this.io.uuid()}` : automaticRunKey(clock.date, accountUsername);
     const controller = new AbortController();
     const active = {id, stop: false, controller};
     this.active = active; // Lock before any asynchronous operation.
-    this.done = this.execute(config, manual, clock, active, manualTarget).finally(() => {
+    this.done = this.execute(config, manual, clock, active, manualTarget, accountUsername).finally(() => {
       if (this.active === active) this.active = null;
     });
     // Keep failures from becoming unhandled if the dashboard has already closed.
@@ -70,26 +76,28 @@ export class LeetCodeRunner {
     return {stopped: true, id: this.active.id};
   }
 
-  async execute(config, manual, clock, active, manualTarget) {
+  async execute(config, manual, clock, active, manualTarget, accountUsername) {
     let run;
     try {
       const runs = await this.io.load();
-      if (!manual && (!config.autoMode || clock.time < config.dailyStartTime || TERMINAL.has(runs[clock.date]?.status))) return;
+      if (!manual && (!config.autoMode || clock.time < config.dailyStartTime || TERMINAL.has(dailyRunForAccount(runs,clock.date,accountUsername)?.status))) return;
       run = {id: active.id, date: clock.date, mode: manual ? 'manual' : 'automatic',
         target: manual ? manualTarget : config.dailyQuestionCount, status: 'discovering',
-        startedAt: this.io.now().toISOString(), tasks: []};
+        startedAt: this.io.now().toISOString(), username:accountUsername, tasks: []};
       await this.io.save(run);
       if (active.stop) return await this.finishStopped(run);
-      const excludeSlugs = new Set(Object.values(runs).flatMap(r =>
+      const accountRuns = Object.values(runs).filter(r => !accountUsername || r.username?.toLowerCase() === accountUsername.toLowerCase());
+      const excludeSlugs = new Set(accountRuns.flatMap(r =>
         (r.tasks || []).map(t => t.problem?.titleSlug)).filter(Boolean));
-      const completedCount = Object.values(runs).reduce((n, r) =>
+      const completedCount = accountRuns.reduce((n, r) =>
         n + (r.tasks || []).filter(t => t.status === 'accepted').length, 0);
       const discoverMore = async (count, preferQuestionOfTheDay) => {
-        const discovered = await this.io.discover({username: config.leetcode.username, count,
-          enforceUsername: config.leetcode.enforceUsername,
+        const discovered = await this.io.discover({username: accountUsername, count,
+          enforceUsername: !!accountUsername,
           language: config.language, allowedDifficulties: config.allowedDifficulties,
           preferQuestionOfTheDay, excludeSlugs:[...excludeSlugs], completedCount});
         if (active.stop) return false;
+        if (accountUsername && discovered.username.toLowerCase() !== accountUsername.toLowerCase()) throw Error('LeetCode account changed during this run. Retry with the account currently signed in.');
         run.username = discovered.username;
         const fresh = discovered.questions.filter(problem => problem?.titleSlug && !excludeSlugs.has(problem.titleSlug));
         for (const problem of fresh) {
@@ -107,6 +115,7 @@ export class LeetCodeRunner {
       for (const task of run.tasks) {
         while (task.status !== 'ready' && task.attempts < config.maxAttempts) {
           if (active.stop) return await this.finishStopped(run);
+          if (accountUsername && this.io.session && (await this.io.session()).toLowerCase() !== accountUsername.toLowerCase()) throw Error('LeetCode account changed during this run. Retry with the account currently signed in.');
           task.attempts++;
           task.status = 'drafting';
           await this.io.save(run);
@@ -145,6 +154,7 @@ export class LeetCodeRunner {
       }
       const readyCount = run.tasks.filter(t => t.status === 'ready').length;
       run.status = readyCount === run.target ? 'prepared' : run.tasks.some(t => t.status === 'blocked') ? 'blocked' : 'failed';
+      if (run.status === 'blocked') for (const task of run.tasks) if (task.status === 'pending') {task.status='skipped';task.feedback='Earlier question was blocked; retry after fixing the provider.';}
       run.finishedAt = this.io.now().toISOString();
       await this.io.save(run);
       await this.io.notify(`leetcode-${run.id}`, run.status === 'prepared' ? 'Practice drafts ready' : 'Practice preparation needs attention',
@@ -154,6 +164,7 @@ export class LeetCodeRunner {
       if (active.stop && run) return await this.finishStopped(run);
       if (run) {
         run.status = 'blocked'; run.feedback = error.message;
+        for (const task of run.tasks) if (['pending','drafting'].includes(task.status)) {task.status='blocked';task.feedback=error.message;}
         run.finishedAt = this.io.now().toISOString(); await this.io.save(run);
       }
       await this.io.notify('leetcode-error', 'LeetCode agent needs attention', error.message);
