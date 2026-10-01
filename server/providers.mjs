@@ -29,7 +29,7 @@ export async function complete(provider,key,model,prompt,config) {
     headers['x-goog-api-key']=key;
     body={contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{responseMimeType:'application/json',maxOutputTokens:config.maxOutputTokens}};
   } else if (provider==='groq') {
-    url='https://api.groq.com/openai/v1/chat/completions';
+    url='http://127.0.0.1:3011/v1/chat/completions';
     headers.Authorization=`Bearer ${key}`;
     body={model,messages:[{role:'user',content:prompt}],max_tokens:config.maxOutputTokens};
   } else throw new ProviderError('Unknown AI provider','request');
