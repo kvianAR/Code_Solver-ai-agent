@@ -90,8 +90,8 @@ async function handleContests(){
       if(now>=start-offset&&now<start&&!contest.reminders[name]){contest.reminders[name]=new Date().toISOString();await notify(`contest-${contest.id}-${name}`,`${contest.title} upcoming`,`${name==='24h'?'Tomorrow':'In one hour'} at ${new Date(contest.startAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}.`);}
     }
     if(now>=start&&now<end&&!contest.openedAt){
-      await chrome.tabs.create({url:contest.url,active:true});contest.openedAt=new Date().toISOString();
-      await notify(`contest-${contest.id}-started`,`${contest.title} started`,'Contest page opened in Brave. Solve it from the official contest workspace.');
+      contest.openedAt=new Date().toISOString();
+      await notify(`contest-${contest.id}-started`,`${contest.title} started`,'Contest is live. Open it from the extension timetable when convenient.');
     }
   }
   await chrome.storage.local.set({leetcodeContests:contests});

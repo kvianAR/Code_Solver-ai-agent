@@ -30,7 +30,9 @@ function wakeBrowserForLeetCode(){
     execFile('/usr/bin/caffeinate',['-i','-u','-t','1800'],error=>{if(error)console.error('Could not keep the Mac awake for LeetCode:',error.message);});
   }
   browserLaunchDate=clock.date;
-  execFile('/usr/bin/open',['-gja','Brave Browser','https://leetcode.com/problemset/'],error=>{if(error)console.error('Could not wake Brave for the daily LeetCode session:',error.message);});
+  // Launch Brave hidden so the extension can run without stealing focus or
+  // opening a visible LeetCode page in the middle of the user's work.
+  execFile('/usr/bin/open',['-gja','Brave Browser'],error=>{if(error)console.error('Could not wake Brave for the daily LeetCode session:',error.message);});
 }
 const timer=setInterval(()=>{agent.tick();wakeBrowserForLeetCode();},15000);agent.tick();wakeBrowserForLeetCode();
 function shutdown(){clearInterval(timer);server.close();if(fs.existsSync(lock))fs.unlinkSync(lock);process.exit(0);}
