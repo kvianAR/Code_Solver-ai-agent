@@ -1,6 +1,6 @@
 const $=s=>document.querySelector(s);
 const extension=typeof chrome!=='undefined'&&!!chrome.runtime?.id;
-const UI_BUILD='2.3.0';
+const UI_BUILD='2.4.0';
 if(extension)chrome.storage.local.get('uiBuild').then(({uiBuild})=>{if(uiBuild!==UI_BUILD)chrome.storage.local.set({uiBuild:UI_BUILD}).then(()=>chrome.runtime.reload());});
 let connection=null,state=null,catalog=[],page='today',busy=false,leetcodeRuns={},leetcodeContests=[],liveRun=null,leetcodeAccount='',activeRunId=null,stopping=false;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -11,8 +11,19 @@ async function api(route,body,method){
   const r=await fetch(connection.url+'/api/'+route,{method:method||(body?'POST':'GET'),headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(route==='provider-test'?180000:30000)});
   const value=await r.json();if(!r.ok)throw Error(value.error||'Request failed');return value;
 }
-async function loadConnection(){if(extension)return(await chrome.storage.local.get('connection')).connection;try{return JSON.parse(sessionStorage.getItem('connection'));}catch{return null;}}
-async function saveConnection(value){if(extension)await chrome.storage.local.set({connection:value});else sessionStorage.setItem('connection',JSON.stringify(value));}
+async function loadConnection(){
+  if(extension)return(await chrome.storage.local.get('connection')).connection;
+  try{
+    const saved=localStorage.getItem('connection')||sessionStorage.getItem('connection');
+    if(!saved)return null;
+    localStorage.setItem('connection',saved);sessionStorage.removeItem('connection');
+    return JSON.parse(saved);
+  }catch{return null;}
+}
+async function saveConnection(value){
+  if(extension){await chrome.storage.local.set({connection:value});return;}
+  if(value)localStorage.setItem('connection',JSON.stringify(value));else localStorage.removeItem('connection');
+}
 function formatDate(value,options={}){return new Intl.DateTimeFormat('en-IN',{timeZone:state?.config.timezone||'Asia/Kolkata',...options}).format(new Date(value));}
 function dateOnly(value){return new Intl.DateTimeFormat('en-IN',{timeZone:'UTC',weekday:'short',day:'numeric',month:'short'}).format(new Date(value+'T12:00:00Z'));}
 function streak(){const dates=new Set(state.jobs.filter(j=>j.type==='daily'&&j.status==='completed').map(j=>j.date));let date=state.today,count=0;if(!dates.has(date))date=previous(date);while(dates.has(date)){count++;date=previous(date);}return count;}
