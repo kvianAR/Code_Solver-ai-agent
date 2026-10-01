@@ -1,6 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import {fileURLToPath} from 'node:url';
+import {execFile} from 'node:child_process';
 import {Store} from './store.mjs';
 import {Platform} from './platform.mjs';
 import {dockerJudge} from './runner.mjs';
@@ -15,6 +16,17 @@ fs.writeFileSync(lock,String(process.pid),{flag:'wx',mode:0o600});
 const store=new Store(dir),platform=new Platform(store,dockerJudge),agent=new Agent(store,platform);
 const server=createServer(store,platform,agent);
 server.listen(Number(process.env.PORT||8787),process.env.HOST||'127.0.0.1',()=>console.log('Solver agent listening. Use npm run token for the dashboard connection token.'));
-const timer=setInterval(()=>agent.tick(),15000);agent.tick();
+let browserLaunchDate='';
+function localClock(timezone){
+  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts().map(x=>[x.type,x.value]));
+  return {date:`${parts.year}-${parts.month}-${parts.day}`,time:`${parts.hour}:${parts.minute}`};
+}
+function wakeBrowserForLeetCode(){
+  const config=store.state.config,clock=localClock(config.timezone);
+  if(process.platform!=='darwin'||!config.autoMode||!config.leetcode?.enabled||clock.time<config.dailyStartTime||browserLaunchDate===clock.date)return;
+  browserLaunchDate=clock.date;
+  execFile('/usr/bin/open',['-gja','Brave Browser'],error=>{if(error)console.error('Could not wake Brave for the daily LeetCode session:',error.message);});
+}
+const timer=setInterval(()=>{agent.tick();wakeBrowserForLeetCode();},15000);agent.tick();wakeBrowserForLeetCode();
 function shutdown(){clearInterval(timer);server.close();if(fs.existsSync(lock))fs.unlinkSync(lock);process.exit(0);}
 process.on('SIGINT',shutdown);process.on('SIGTERM',shutdown);

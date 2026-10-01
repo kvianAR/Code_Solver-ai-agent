@@ -2,7 +2,37 @@ import {LeetCodeRunner, archiveRetryableAutomaticRun, dailyRunForAccount, localC
 async function notify(id,title,message){await chrome.notifications.create(id,{type:'basic',iconUrl:'icon.png',title,message:String(message).slice(0,400)});}
 async function serverApi(connection,route,body,signal){const response=await fetch(connection.url+'/api/'+route,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(120000)]):AbortSignal.timeout(120000)});const value=await response.json().catch(()=>({}));if(!response.ok)throw Error(value.error||`Agent request failed (${response.status})`);return value;}
 async function waitForTab(tabId){const current=await chrome.tabs.get(tabId);if(current.status==='complete')return;await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{chrome.tabs.onUpdated.removeListener(listener);reject(Error('LeetCode page load timed out'));},30000);const listener=(id,info)=>{if(id===tabId&&info.status==='complete'){clearTimeout(timer);chrome.tabs.onUpdated.removeListener(listener);resolve();}};chrome.tabs.onUpdated.addListener(listener);});}
-async function leetcodeMessage(message,isStopped=()=>false){let[tab]=await chrome.tabs.query({url:['https://leetcode.com/problemset/*','https://leetcode.com/problems/*']});if(!tab)tab=await chrome.tabs.create({url:'https://leetcode.com/problemset/',active:false});await waitForTab(tab.id);if(isStopped())throw Error('Session stopped');try{return await chrome.tabs.sendMessage(tab.id,message);}catch{await chrome.scripting.executeScript({target:{tabId:tab.id},files:['leetcode.js']});if(isStopped())throw Error('Session stopped');return chrome.tabs.sendMessage(tab.id,message);}}
+let preferredLeetCodeTabId=null;
+function rankLeetCodeTabs(tabs){return [...tabs].sort((a,b)=>{
+  if(a.id===preferredLeetCodeTabId)return -1;if(b.id===preferredLeetCodeTabId)return 1;
+  if(!!a.discarded!==!!b.discarded)return a.discarded?1:-1;
+  if(!!a.active!==!!b.active)return a.active?-1:1;
+  if((a.status==='complete')!==(b.status==='complete'))return a.status==='complete'?-1:1;
+  return (b.lastAccessed||0)-(a.lastAccessed||0);
+});}
+async function sendLeetCodeMessage(tab,message,isStopped){
+  if(tab.discarded)await chrome.tabs.reload(tab.id);
+  await waitForTab(tab.id);if(isStopped())throw Error('Session stopped');
+  try{return await chrome.tabs.sendMessage(tab.id,message);}catch{
+    await chrome.scripting.executeScript({target:{tabId:tab.id},files:['leetcode.js']});
+    if(isStopped())throw Error('Session stopped');return chrome.tabs.sendMessage(tab.id,message);
+  }
+}
+async function leetcodeMessage(message,isStopped=()=>false){
+  let tabs=rankLeetCodeTabs(await chrome.tabs.query({url:'https://leetcode.com/*'})),lastResponse,lastError;
+  if(!tabs.length)tabs=[await chrome.tabs.create({url:'https://leetcode.com/problemset/',active:false})];
+  for(const tab of tabs){
+    try{
+      const response=await sendLeetCodeMessage(tab,message,isStopped);
+      lastResponse=response;
+      if(message.type==='leetcode-session'&&response?.ok&&!response.value?.signedIn)continue;
+      if(response?.ok)preferredLeetCodeTabId=tab.id;
+      return response;
+    }catch(error){lastError=error;}
+  }
+  if(lastResponse)return lastResponse;
+  throw lastError||Error('Could not contact a LeetCode tab');
+}
 async function currentAccount(){const response=await leetcodeMessage({type:'leetcode-session'});if(!response?.ok)throw Error(response?.error||'Could not check the LeetCode login');return response.value?.signedIn?response.value.username:'';}
 async function saveRun(run) {
   const {leetcodeRuns={}}=await chrome.storage.local.get('leetcodeRuns');
@@ -90,7 +120,7 @@ async function poll(){
           live=undefined;
         }
       }
-      if(account&&state.config.autoMode&&clock.time>=state.config.dailyStartTime&&!['completed','prepared','failed','blocked','stopped','interrupted'].includes(live?.status))runner.start(state.config,false,2,account);
+      if(account&&state.config.autoMode&&clock.time>=state.config.dailyStartTime&&!['completed','prepared','failed','blocked','stopped','interrupted'].includes(live?.status))runner.start(state.config,false,state.config.dailyQuestionCount,account);
     }
     const today=state.config.leetcode?.enabled?live:state.jobs.find(j=>j.id==='daily:'+state.today),errors=fresh.some(n=>n.kind==='error')||today?.status==='blocked'||today?.status==='failed';
     await chrome.action.setBadgeText({text:state.config.leetcode?.enabled&&!account?'LOGIN':errors?'!':today?.status==='completed'?`${state.config.dailyQuestionCount}/${state.config.dailyQuestionCount}`:''});
@@ -152,7 +182,7 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
       const archiveId=`automatic-history:${clock.date}:${crypto.randomUUID()}`;
       if(!archiveRetryableAutomaticRun(leetcodeRuns,run.id||clock.date,archiveId))throw Error('Could not archive the previous run');
       await chrome.storage.local.set({leetcodeRuns});
-      return {ok:true,...runner.start(state.config,false,2,account)};
+      return {ok:true,...runner.start(state.config,false,state.config.dailyQuestionCount,account)};
     })().then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));
     return true;
   }
