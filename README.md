@@ -49,7 +49,7 @@ flowchart LR
 | ⏰ Daily scheduling | Your time and timezone; default 10:00 AM Asia/Kolkata |
 | 🎯 Adjustable targets | Automatic daily count: 1–10; manual batch: 1–100 |
 | 🧭 Problem discovery | Foundations-to-advanced roadmap, then random eligible problems |
-| 📅 Optional QOTD | Prefer the daily challenge when untouched and within your difficulty filter |
+| 📅 Daily QOTD slot | Use the daily challenge as question one whenever it is available and free |
 | 👤 Account flexibility | Uses whichever LeetCode account is signed in to the Brave/Chrome profile; daily runs and history stay account-specific |
 | 🤖 Two AI providers | Groq and Gemini, editable model IDs, configurable fallback order |
 | 📝 Draft history | Generated code, explanation, complexity, attempt counts, and failure feedback |
@@ -181,7 +181,7 @@ A same-day stopped/failed automatic run can be archived and retried when moved t
 | Questions/day | 1–10 drafts |
 | Manual count | 1–100 drafts; actual availability depends on untouched eligible questions |
 | Difficulties | Any combination of Easy, Medium, Hard |
-| Prefer QOTD | Optional; the challenge must be untouched and eligible |
+| Prefer QOTD | When enabled, QOTD is always question one if it is available and free; the remaining questions stay untouched |
 | Max attempts | 1–8 per question |
 | Provider order | Groq → Gemini or Gemini → Groq |
 | Token budget | 1,000–1,000,000 estimated/reported tokens per day |

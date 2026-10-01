@@ -32,7 +32,7 @@
     const user=(await graphql(USER_QUERY)).userStatus;if(!user?.isSignedIn)throw Error('Brave me LeetCode login required');
     if(options.enforceUsername&&options.username&&user.username.toLowerCase()!==options.username.toLowerCase())throw Error(`Wrong LeetCode account: ${user.username}. Expected ${options.username}.`);
     const allowed=new Set(options.allowedDifficulties||['Easy','Medium','Hard']),chosen=[],seen=new Set(options.excludeSlugs||[]);
-    if(options.preferQuestionOfTheDay){const daily=(await graphql(DAILY_QUERY)).activeDailyCodingChallengeQuestion?.question;if(daily?.titleSlug){const full=await question(daily.titleSlug,options.language);if(full&&!seen.has(full.titleSlug)&&!full.paidOnly&&full.status==null&&allowed.has(full.difficulty)){full.selection='QOTD';chosen.push(full);seen.add(full.titleSlug);}}}
+    if(options.preferQuestionOfTheDay){const daily=(await graphql(DAILY_QUERY)).activeDailyCodingChallengeQuestion?.question;if(daily?.titleSlug){const full=await question(daily.titleSlug,options.language);if(full&&!full.paidOnly){full.selection='QOTD';chosen.push(full);seen.add(full.titleSlug);}}}
     const completed=Math.max(0,Number(options.completedCount)||0),start=Math.min(Math.floor(completed/10)*10,Math.max(0,ROADMAP.length-20));
     const ordered=[...shuffle(ROADMAP.slice(start,start+20)),...shuffle(ROADMAP.slice(0,start)),...shuffle(ROADMAP.slice(start+20))];
     for(const slug of ordered){if(chosen.length>=options.count)break;if(seen.has(slug))continue;const q=await question(slug,options.language);if(q&&!q.paidOnly&&q.status==null&&allowed.has(q.difficulty)){q.selection='ROADMAP';chosen.push(q);seen.add(slug);}}

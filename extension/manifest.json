@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LeetCode AI Agent • Practice Autopilot",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Daily AI-generated LeetCode solutions, account submissions, reminders, and contest calendar.",
   "permissions": ["storage", "alarms", "notifications", "scripting"],
   "host_permissions": ["http://localhost/*", "http://127.0.0.1/*", "https://leetcode.com/*"],
