@@ -41,4 +41,4 @@ sudo install -o root -g wheel -m 755 "$PROJECT_DIR/scripts/mac-wake-helper.mjs" 
 sudo install -o root -g wheel -m 644 "$TMP_PLIST" "$PLIST"
 sudo launchctl bootout system "$PLIST" 2>/dev/null || true
 sudo launchctl bootstrap system "$PLIST"
-echo "Wake helper installed. It refreshes when settings change and checks LeetCode contests hourly."
+echo "Wake helper installed. It refreshes when settings change and checks LeetCode contests about three times a week."

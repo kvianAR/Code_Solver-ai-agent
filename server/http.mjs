@@ -7,6 +7,7 @@ import {buildPlan} from './planner.mjs';
 import {publicProblem} from './catalog.mjs';
 import {complete,decodeSolution,leetcodeSolutionPrompt} from './providers.mjs';
 import {localSyntaxCheck} from './runner.mjs';
+import {refreshOfficialContests} from './contest-calendar.mjs';
 function authorized(req,token) {const provided=(req.headers.authorization||'').replace(/^Bearer /,'');const a=Buffer.from(provided),b=Buffer.from(token);return a.length===b.length&&crypto.timingSafeEqual(a,b);}
 async function body(req) {let data='';for await(const chunk of req){data+=chunk;if(data.length>150000)throw Error('Request too large');}return data?JSON.parse(data):{};}
 export function createServer(store,platform,agent) {
@@ -26,6 +27,8 @@ export function createServer(store,platform,agent) {
         state.jobs=state.jobs.map(j=>({...j,tasks:j.tasks.map(t=>({...t,problem:publicProblem(t.problem)}))}));
         state.today=localTime(new Date(),store.state.config.timezone).date;
         send(200,state);
+      }else if(route==='GET /api/leetcode/contests'){
+        send(200,await refreshOfficialContests(store,{force:url.searchParams.get('force')==='1'}));
       }else if(route==='GET /api/catalog'){send(200,(await platform.problems()).map(publicProblem));}
       else if(route==='POST /api/config') {
         const input=await body(req);const old=store.state.config;

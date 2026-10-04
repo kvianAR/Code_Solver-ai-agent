@@ -53,16 +53,21 @@ const newRetries=new Map(retries.map(event=>[event.owner,event]));
 for(const event of oldRetries.values())if(newRetries.get(event.owner)?.stamp!==event.stamp)try{pmset(['schedule','cancel','wakeorpoweron',event.stamp,event.owner]);}catch{}
 for(const event of newRetries.values())if(oldRetries.get(event.owner)?.stamp!==event.stamp)pmset(['schedule','wakeorpoweron',event.stamp,event.owner]);
 if(!dryRun){fs.mkdirSync(path.dirname(eventsPath),{recursive:true});fs.writeFileSync(eventsPath,JSON.stringify({...previous,daily:fiveMinutesBefore(config.dailyStartTime),retries},null,2),{mode:0o600});}
-const query=`query contestUpcomingContests { contestV2UpcomingContests { title titleSlug startTime duration } }`;
-const response=await fetch('https://leetcode.com/graphql/',{method:'POST',headers:{'content-type':'application/json','user-agent':'Daily Solver Wake Helper/1.0','referer':'https://leetcode.com/contest/'},body:JSON.stringify({query})});
-if(!response.ok)throw Error(`LeetCode contest calendar failed (${response.status})`);
-const data=await response.json(),now=Date.now(),week=now+7*86400000,scheduled=[];
-for(const contest of data.data?.contestV2UpcomingContests||[]){
-  const start=new Date(contest.startTime*1000),owner=`com.daily-solver.contest.${contest.titleSlug}`,stamp=localStamp(start);
-  if(start.getTime()<now||start.getTime()>week)continue;
-  scheduled.push({owner,stamp,title:contest.title});
+let scheduled=previous.contests||[],contestFetchedAt=Number(previous.contestFetchedAt)||0,contestFailedAt=Number(previous.contestFailedAt)||0;
+if(Date.now()-contestFetchedAt>=56*3600000&&Date.now()-contestFailedAt>=3600000){
+  try{
+    const query=`query contestCalendar { allContests { title titleSlug startTime duration } }`;
+    const response=await fetch('https://leetcode.com/graphql/',{method:'POST',headers:{'content-type':'application/json','user-agent':'Daily Solver Wake Helper/1.0','referer':'https://leetcode.com/contest/'},body:JSON.stringify({query}),signal:AbortSignal.timeout(30000)});
+    if(!response.ok)throw Error(`LeetCode contest calendar failed (${response.status})`);
+    const data=await response.json();
+    if(data.errors?.length||!Array.isArray(data.data?.allContests))throw Error('LeetCode contest calendar response was incomplete');
+    const now=Date.now(),week=now+7*86400000;
+    scheduled=data.data.allContests.filter(contest=>/^(weekly|biweekly)-contest-\d+$/.test(contest.titleSlug||'')).filter(contest=>contest.startTime*1000>=now&&contest.startTime*1000<=week).map(contest=>({owner:`com.daily-solver.contest.${contest.titleSlug}`,stamp:localStamp(new Date(contest.startTime*1000)),title:contest.title}));
+    contestFetchedAt=Date.now();contestFailedAt=0;
+  }catch(error){contestFailedAt=Date.now();console.error(`Contest refresh failed: ${error.message}. Keeping saved wake events.`);}
 }
-for(const event of previous.contests||[]){try{pmset(['schedule','cancel','wakeorpoweron',event.stamp,event.owner]);}catch{}}
-for(const event of scheduled)pmset(['schedule','wakeorpoweron',event.stamp,event.owner]);
-if(!dryRun){fs.mkdirSync(path.dirname(eventsPath),{recursive:true});fs.writeFileSync(eventsPath,JSON.stringify({daily:fiveMinutesBefore(config.dailyStartTime),retries,contests:scheduled},null,2),{mode:0o600});}
-console.log(`Wake schedule refreshed: daily ${fiveMinutesBefore(config.dailyStartTime)}, ${retries.length} hourly retry wakes, contests from LeetCode for seven days.`);
+const oldContests=new Map((previous.contests||[]).map(event=>[event.owner,event])),newContests=new Map(scheduled.map(event=>[event.owner,event]));
+for(const event of oldContests.values())if(newContests.get(event.owner)?.stamp!==event.stamp)try{pmset(['schedule','cancel','wakeorpoweron',event.stamp,event.owner]);}catch{}
+for(const event of newContests.values())if(oldContests.get(event.owner)?.stamp!==event.stamp)pmset(['schedule','wakeorpoweron',event.stamp,event.owner]);
+if(!dryRun){fs.mkdirSync(path.dirname(eventsPath),{recursive:true});fs.writeFileSync(eventsPath,JSON.stringify({daily:fiveMinutesBefore(config.dailyStartTime),retries,contests:scheduled,contestFetchedAt,contestFailedAt},null,2),{mode:0o600});}
+console.log(`Wake schedule refreshed: daily ${fiveMinutesBefore(config.dailyStartTime)}, ${retries.length} hourly retry wakes, ${scheduled.length} contest wakes; calendar checked ${contestFetchedAt?new Date(contestFetchedAt).toISOString():'not yet'}.`);

@@ -1,4 +1,5 @@
 import {LeetCodeRunner, archiveRetryableAutomaticRun, automaticRetryDecision, dailyRunForAccount, latestArchivedAutomaticRun, localClock, shouldRetryForLaterSchedule} from './leetcode-runner.js';
+import {contestRefreshDue} from './contest-calendar.js';
 async function notify(id,title,message){await chrome.notifications.create(id,{type:'basic',iconUrl:'icon.png',title,message:String(message).slice(0,400)});}
 async function serverApi(connection,route,body,signal){const response=await fetch(connection.url+'/api/'+route,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(120000)]):AbortSignal.timeout(120000)});const value=await response.json().catch(()=>({}));if(!response.ok)throw Error(value.error||`Agent request failed (${response.status})`);return value;}
 async function waitForTab(tabId){const current=await chrome.tabs.get(tabId);if(current.status==='complete')return;await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{chrome.tabs.onUpdated.removeListener(listener);reject(Error('LeetCode page load timed out'));},30000);const listener=(id,info)=>{if(id===tabId&&info.status==='complete'){clearTimeout(timer);chrome.tabs.onUpdated.removeListener(listener);resolve();}};chrome.tabs.onUpdated.addListener(listener);});}
@@ -77,14 +78,24 @@ const ready=runner.recover();
 // the judge or discovers new questions. Stop is still checked before submission.
 setInterval(()=>{if(runner.active)chrome.storage.local.get('connection').catch(()=>{});},20000);
 async function refreshContests(force=false){
-  const saved=await chrome.storage.local.get(['leetcodeContests','contestCalendarUpdatedAt']);
-  if(!force&&Date.now()-(saved.contestCalendarUpdatedAt||0)<6*3600000)return saved.leetcodeContests||[];
-  const response=await leetcodeMessage({type:'leetcode-contests'});
-  if(!response?.ok)throw Error(response?.error||'Could not load LeetCode contests');
-  const previous=Object.fromEntries((saved.leetcodeContests||[]).map(c=>[c.id,c]));
-  const contests=response.value.map(c=>({...c,openedAt:previous[c.id]?.openedAt||'',reminders:previous[c.id]?.reminders||{}}));
-  await chrome.storage.local.set({leetcodeContests:contests,contestCalendarUpdatedAt:Date.now()});
-  return contests;
+  const saved=await chrome.storage.local.get(['leetcodeContests','contestCalendarUpdatedAt','contestCalendarFailedAt','contestCalendarVersion']);
+  const oldCalendar=saved.contestCalendarVersion!==2;
+  if(!force&&!oldCalendar&&!contestRefreshDue(saved.contestCalendarUpdatedAt))return saved.leetcodeContests||[];
+  if(!force&&!oldCalendar&&Date.now()-(saved.contestCalendarFailedAt||0)<3600000)return saved.leetcodeContests||[];
+  try{
+    const {connection}=await chrome.storage.local.get('connection');
+    if(!connection)throw Error('Agent connection is missing');
+    const response=await serverApi(connection,`leetcode/contests${force?'?force=1':''}`);
+    if(response.error&&!response.events?.length)throw Error(response.error);
+    const previous=Object.fromEntries((saved.leetcodeContests||[]).map(c=>[c.id,c]));
+    const contests=response.events.map(c=>({...c,openedAt:previous[c.id]?.openedAt||'',reminders:previous[c.id]?.reminders||{}}));
+    await chrome.storage.local.set({leetcodeContests:contests,contestCalendarUpdatedAt:response.updatedAt||0,contestCalendarFailedAt:response.failedAt||0,contestCalendarError:response.error||'',contestCalendarVersion:2});
+    return contests;
+  }catch(error){
+    await chrome.storage.local.set({contestCalendarFailedAt:Date.now(),contestCalendarError:error.message});
+    if(force)throw error;
+    return saved.leetcodeContests||[];
+  }
 }
 async function handleContests(){
   const contests=await refreshContests(),now=Date.now();
@@ -95,6 +106,8 @@ async function handleContests(){
     }
     if(now>=start&&now<end&&!contest.openedAt){
       contest.openedAt=new Date().toISOString();
+      const existing=await chrome.tabs.query({url:`https://leetcode.com/contest/${contest.titleSlug}/*`});
+      if(!existing.length)await chrome.tabs.create({url:contest.url,active:false});
       await notify(`contest-${contest.id}-started`,`${contest.title} started`,'Contest is live. Open it from the extension timetable when convenient.');
     }
   }
@@ -168,7 +181,7 @@ async function poll(){
   }finally{pollInFlight=false;}
 }
 async function init(){await chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});await chrome.alarms.create('poll-agent',{periodInMinutes:1});await poll();}
-chrome.runtime.onInstalled.addListener(init);chrome.runtime.onStartup.addListener(init);chrome.alarms.onAlarm.addListener(a=>{if(a.name==='poll-agent')poll();});chrome.notifications.onClicked.addListener(id=>chrome.tabs.create({url:chrome.runtime.getURL(id.startsWith('leetcode-run:')?`dashboard.html#run=${encodeURIComponent(id.slice('leetcode-run:'.length))}`:'dashboard.html')}));
+chrome.runtime.onInstalled.addListener(init);chrome.runtime.onStartup.addListener(init);chrome.alarms.onAlarm.addListener(a=>{if(a.name==='poll-agent')poll();});chrome.notifications.onClicked.addListener(id=>chrome.tabs.create({url:chrome.runtime.getURL(id.startsWith('leetcode-run:')?`dashboard.html#run=${encodeURIComponent(id.slice('leetcode-run:'.length))}`:id.startsWith('contest-')?'dashboard.html#contests':'dashboard.html')}));
 chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(sender.id!==chrome.runtime.id || sender.tab && !sender.url?.startsWith(chrome.runtime.getURL('')))return;
   if(message.type==='stop-leetcode') {sendResponse({ok:true,...runner.stop()});return;}
