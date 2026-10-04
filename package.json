@@ -1,5 +1,5 @@
 {
   "name": "leetcode-ai-agent", "version": "1.0.0", "private": true,
   "type": "module", "engines": {"node": ">=22"},
-  "scripts": {"start": "node server/index.mjs", "test": "node --test test/*.test.mjs", "token": "node scripts/token.mjs", "wake:preview": "node scripts/mac-wake-helper.mjs --dry-run", "wake:cancel-preview": "node scripts/mac-wake-helper.mjs --cancel --dry-run", "wake:install": "zsh scripts/install-mac-wake.sh", "wake:uninstall": "zsh scripts/install-mac-wake.sh uninstall", "background:install": "zsh scripts/install-background.sh", "background:uninstall": "zsh scripts/install-background.sh uninstall", "background:status": "zsh scripts/background-status.sh"}
+  "scripts": {"start": "node server/index.mjs", "test": "node --test test/*.test.mjs", "detector:eval": "node scripts/detector-eval.mjs", "token": "node scripts/token.mjs", "wake:preview": "node scripts/mac-wake-helper.mjs --dry-run", "wake:cancel-preview": "node scripts/mac-wake-helper.mjs --cancel --dry-run", "wake:install": "zsh scripts/install-mac-wake.sh", "wake:uninstall": "zsh scripts/install-mac-wake.sh uninstall", "background:install": "zsh scripts/install-background.sh", "background:uninstall": "zsh scripts/install-background.sh uninstall", "background:status": "zsh scripts/background-status.sh"}
 }

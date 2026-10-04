@@ -61,6 +61,26 @@ flowchart LR
 | 💸 Budget controls | Daily token budget and up to eight generation attempts per question |
 | 🧪 Owned test sandbox | Optional Docker judge and adapter for your own question/contest platform |
 | ✍️ Owned-test solution style | Natural Hinglish explanation and readable code, or a concise style; applies only to the owned sandbox/test-platform agent |
+| 📊 Detector evaluation | Measure an owned detector against labeled synthetic or consented code samples; reports confusion matrix and false-positive rate |
+
+### Evaluate your own detector
+
+Create a JSON file with labeled samples (`expected` is the known source, not the detector's guess):
+
+```json
+[
+  {"id":"sample-1","expected":"human","code":"def solve(data):\n    return data"},
+  {"id":"sample-2","expected":"ai","code":"def solve(data):\n    return list(reversed(data))"}
+]
+```
+
+Your detector endpoint must accept `POST` JSON `{ "id": "...", "code": "..." }` and return `{ "score": 0.0 }`, where `1.0` means most likely AI. Then run:
+
+```bash
+npm run detector:eval -- --samples ./labeled.json --endpoint http://127.0.0.1:3011/detect
+```
+
+The report contains per-sample scores and aggregate accuracy, precision, recall, and false-positive rate; it does not print submitted source code. Set `DETECTOR_API_KEY` in the environment if your endpoint needs bearer authentication. This evaluator is for your own detector and does not interact with LeetCode contests.
 
 The extension and macOS helper check LeetCode's official contest data about every 56 hours (roughly three times a week). The timetable keeps contests from the last seven days alongside the next seven days, so a contest remains visible after it ends. The helper caches successful results and preserves known wake events if LeetCode is temporarily unavailable. The rolling practice plan refreshes each Monday.
 
