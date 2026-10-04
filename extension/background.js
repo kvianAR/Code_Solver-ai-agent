@@ -1,5 +1,5 @@
 import {LeetCodeRunner, archiveRetryableAutomaticRun, automaticRetryDecision, dailyRunForAccount, latestArchivedAutomaticRun, localClock, shouldRetryForLaterSchedule} from './leetcode-runner.js';
-import {contestRefreshDue} from './contest-calendar.js';
+import {activeContest,contestRefreshDue} from './contest-calendar.js';
 async function notify(id,title,message){await chrome.notifications.create(id,{type:'basic',iconUrl:'icon.png',title,message:String(message).slice(0,400)});}
 async function serverApi(connection,route,body,signal){const response=await fetch(connection.url+'/api/'+route,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(120000)]):AbortSignal.timeout(120000)});const value=await response.json().catch(()=>({}));if(!response.ok)throw Error(value.error||`Agent request failed (${response.status})`);return value;}
 async function waitForTab(tabId){const current=await chrome.tabs.get(tabId);if(current.status==='complete')return;await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{chrome.tabs.onUpdated.removeListener(listener);reject(Error('LeetCode page load timed out'));},30000);const listener=(id,info)=>{if(id===tabId&&info.status==='complete'){clearTimeout(timer);chrome.tabs.onUpdated.removeListener(listener);resolve();}};chrome.tabs.onUpdated.addListener(listener);});}
@@ -53,6 +53,7 @@ const runner=new LeetCodeRunner({
     return response.value;
   },
   solve:async(problem,feedback,signal)=>{
+    await requirePracticeWindow();
     const {connection}=await chrome.storage.local.get('connection');
     if(!connection)throw Error('Connect the extension to the agent first');
     return serverApi(connection,'leetcode/solve',{problem,feedback},signal);
@@ -63,6 +64,7 @@ const runner=new LeetCodeRunner({
     return serverApi(connection,'leetcode/verify',{code},signal);
   },
   submit:async(problem,code,username,signal)=>{
+    await requirePracticeWindow();
     const response=await leetcodeMessage({type:'leetcode-submit',problem,code,username},()=>signal?.aborted);
     if(!response?.ok)throw Error(response?.error||'LeetCode submission failed');
     return response.value;
@@ -74,6 +76,11 @@ const runner=new LeetCodeRunner({
   }
 });
 const ready=runner.recover();
+async function requirePracticeWindow(){
+  const contests=await refreshContests();
+  const live=activeContest(contests);
+  if(live)throw Error(`${live.title} is live. AI solving is paused until the contest ends; join and solve it yourself.`);
+}
 // Storage calls keep an active MV3 session alive while the content script polls
 // the judge or discovers new questions. Stop is still checked before submission.
 setInterval(()=>{if(runner.active)chrome.storage.local.get('connection').catch(()=>{});},20000);

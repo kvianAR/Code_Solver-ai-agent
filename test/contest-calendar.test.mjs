@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {CONTEST_REFRESH_MS, contestRefreshDue, contestStatus, normalizeContestCalendar} from '../extension/contest-calendar.js';
+import {CONTEST_REFRESH_MS, activeContest, contestRefreshDue, contestStatus, normalizeContestCalendar} from '../extension/contest-calendar.js';
 
 test('calendar retains a recently ended weekly contest alongside upcoming events',()=>{
   const now=Date.parse('2026-10-04T19:25:00Z');
@@ -22,4 +22,11 @@ test('calendar refreshes roughly three times weekly',()=>{
   assert.equal(contestRefreshDue(0,now),true);
   assert.equal(contestRefreshDue(now-CONTEST_REFRESH_MS+1,now),false);
   assert.equal(contestRefreshDue(now-CONTEST_REFRESH_MS,now),true);
+});
+
+test('live contest window is detected exactly between its start and end',()=>{
+  const event={title:'Weekly Contest 523',startAt:'2026-10-11T02:30:00.000Z',endAt:'2026-10-11T04:00:00.000Z'};
+  assert.equal(activeContest([event],Date.parse(event.startAt)-1),null);
+  assert.equal(activeContest([event],Date.parse(event.startAt)),event);
+  assert.equal(activeContest([event],Date.parse(event.endAt)),null);
 });

@@ -21,7 +21,7 @@ Scheduled LeetCode practice drafts · Manual batches · Review-first workflow ·
 
 LeetCode AI Agent is a local AI practice assistant with a Brave/Chrome extension. Choose a time and a question count: it discovers untouched LeetCode problems, generates solutions with **Groq or Gemini**, checks syntax, submits them on the signed-in account, and records LeetCode's result.
 
-For daily practice sessions, the extension generates a solution, runs a local syntax check, submits it to LeetCode on the currently signed-in browser account, and retries rejected solutions up to the configured attempt limit. Live rated contests remain reminder-and-open only.
+For daily practice sessions, the extension generates a solution, runs a local syntax check, submits it to LeetCode on the currently signed-in browser account, and retries rejected solutions up to the configured attempt limit. Live rated contests remain reminder-and-open only. AI solving and submissions pause while an official contest is live; the contest is for the participant to solve without external code generation, as required by [LeetCode's contest rules](https://leetcode.com/discuss/post/951105/new-contest-rule-effective-from-december-2020/).
 
 > **Project status: experimental.** This is an unpacked extension, not a Chrome Web Store release. LeetCode session APIs and provider model availability can change. Syntax checks do not prove solution correctness. Live API generation depends on your account access, quota, and provider uptime.
 

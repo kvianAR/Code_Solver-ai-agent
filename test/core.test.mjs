@@ -178,10 +178,16 @@ test('live practice uses Gemini backup when Groq is temporarily unavailable',asy
   const server=createServer(store,platform,agent);
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   t.after(()=>new Promise(resolve=>server.close(resolve)));
-  const response=await fetch(`http://127.0.0.1:${server.address().port}/api/leetcode/solve`,{
+  const request=()=>fetch(`http://127.0.0.1:${server.address().port}/api/leetcode/solve`,{
     method:'POST',headers:{Authorization:`Bearer ${store.state.adminToken}`,'Content-Type':'application/json'},
     body:JSON.stringify({problem:{title:'Example',statement:'Practice data',starterCode:'class Solution: pass'}})
   });
+  store.state.contestCalendar={events:[{title:'Live rated contest',startAt:new Date(Date.now()-60000).toISOString(),endAt:new Date(Date.now()+60000).toISOString()}]};
+  const blocked=await request();
+  assert.equal(blocked.status,400);assert.match((await blocked.json()).error,/AI solving is paused/);
+  assert.deepEqual(calls,[]);
+  store.state.contestCalendar.events=[];
+  const response=await request();
   assert.equal(response.status,200);assert.equal((await response.json()).provider,'gemini');
   assert.deepEqual(calls,['groq','gemini']);assert.deepEqual(store.state.disabledProviders,{});
   assert.equal(store.publicState().providerHealth.groq.status,'temporary');

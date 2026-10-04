@@ -8,6 +8,7 @@ import {publicProblem} from './catalog.mjs';
 import {complete,decodeSolution,leetcodeSolutionPrompt} from './providers.mjs';
 import {localSyntaxCheck} from './runner.mjs';
 import {refreshOfficialContests} from './contest-calendar.mjs';
+import {activeContest} from '../extension/contest-calendar.js';
 function authorized(req,token) {const provided=(req.headers.authorization||'').replace(/^Bearer /,'');const a=Buffer.from(provided),b=Buffer.from(token);return a.length===b.length&&crypto.timingSafeEqual(a,b);}
 async function body(req) {let data='';for await(const chunk of req){data+=chunk;if(data.length>150000)throw Error('Request too large');}return data?JSON.parse(data):{};}
 export function createServer(store,platform,agent) {
@@ -58,6 +59,8 @@ export function createServer(store,platform,agent) {
         const j=await agent.daily(localTime(new Date(),store.state.config.timezone).date);agent.pump();send(202,{id:j.id});
       }else if(route==='POST /api/leetcode/solve') {
         const input=await body(req),c=store.state.config;
+        const live=activeContest(store.state.contestCalendar?.events);
+        if(live)throw Error(`${live.title} is live. AI solving is paused until the contest ends.`);
         agent.chooseProvider();
         if(!c.leetcode?.enabled)throw Error('LeetCode browser mode is off');
         if(!input.problem||typeof input.problem.title!=='string'||typeof input.problem.statement!=='string'||typeof input.problem.starterCode!=='string')throw Error('Invalid LeetCode problem');

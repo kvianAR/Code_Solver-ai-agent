@@ -175,7 +175,7 @@ export class LeetCodeRunner {
             if (active.stop) return await this.finishStopped(run);
             task.feedback = error.message;
             task.status = 'pending';
-            if (/key|quota|budget|login|session|csrf|account/i.test(error.message)) {
+            if (/key|quota|budget|login|session|csrf|account|contest.*is live/i.test(error.message)) {
               task.status = 'blocked';
               break;
             }
@@ -196,7 +196,7 @@ export class LeetCodeRunner {
           }catch(error){
             if(active.stop)return await this.finishStopped(run);
             task.feedback=error.message;task.status='pending';
-            if(/login|session|csrf|account|401|403/i.test(error.message)){task.status='blocked';break;}
+            if(/login|session|csrf|account|401|403|contest.*is live/i.test(error.message)){task.status='blocked';break;}
             await this.io.save(run);
           }
         }

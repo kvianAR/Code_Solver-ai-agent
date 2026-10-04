@@ -30,3 +30,7 @@ export function contestStatus(contest, now = Date.now()) {
   if (now < Date.parse(contest.endAt)) return 'Live';
   return 'Ended';
 }
+
+export function activeContest(events, now = Date.now()) {
+  return (events || []).find(contest => contestStatus(contest, now) === 'Live') || null;
+}
