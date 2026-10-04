@@ -31,7 +31,7 @@ export function createServer(store,platform,agent) {
         const input=await body(req);const old=store.state.config;
         if(agent.running.size&&(['language','platform'].some(k=>JSON.stringify(input[k]??old[k])!==JSON.stringify(old[k]))))throw Error('Pause and finish active work before changing language or platform');
         store.state.config=validateConfig({...old,...input,models:{...old.models,...input.models},platform:{...old.platform,...input.platform},judge:{...old.judge,...input.judge},leetcode:{...old.leetcode,...input.leetcode}});
-        for(const provider of ['groq','gemini'])if(input.models?.[provider]&&input.models[provider]!==old.models[provider])delete store.state.disabledProviders[provider];
+        for(const provider of ['groq','gemini'])if(input.models?.[provider]&&input.models[provider]!==old.models[provider]){delete store.state.disabledProviders[provider];delete store.state.providerHealth[provider];}
         store.save();
         await buildPlan(store,platform,localTime(new Date(),store.state.config.timezone).date);agent.resumeBlocked();send(200,{ok:true});
       }else if(route==='POST /api/keys') {
@@ -44,9 +44,11 @@ export function createServer(store,platform,agent) {
         // This explicit connection test is a paid API call and is counted against the budget.
         const c=store.state.config,d=localTime(new Date(),c.timezone).date,u=store.state.usage[d]||={tokens:0,calls:0};
         if(u.tokens+192>c.dailyTokenBudget)throw Error('Daily token budget reached');u.tokens+=192;u.calls++;store.save();
-        const r=await complete(provider,store.secret(provider),c.models[provider],'Return JSON {"ok":true}.',{...c,maxOutputTokens:128});
+        let r;
+        try{r=await complete(provider,store.secret(provider),c.models[provider],'Return JSON {"ok":true}.',{...c,maxOutputTokens:128});}
+        catch(e){store.providerResult(provider,e.kind||'temporary',e.message);throw e;}
         if(Number.isFinite(r.tokens))u.tokens=Math.max(0,u.tokens-192+r.tokens);
-        delete store.state.disabledProviders[provider];store.save();agent.resumeBlocked();send(200,{ok:true,message:'Provider connected'});
+        delete store.state.disabledProviders[provider];store.providerResult(provider,'working');agent.resumeBlocked();send(200,{ok:true,message:'Provider connected'});
       }else if(route==='POST /api/run') {
         if(store.state.config.leetcode?.enabled)throw Error('Use the Brave extension to run the live LeetCode session');
         if(!store.state.config.autoMode)throw Error('Turn Auto Mode on first');
@@ -68,9 +70,12 @@ export function createServer(store,platform,agent) {
           try {
             const result=await agent.complete(provider,store.secret(provider),c.models[provider],prompt,c);
             if(Number.isFinite(result.tokens)&&result.tokens>=0)usage.tokens=Math.max(0,usage.tokens-reserve+result.tokens);
-            const solution=decodeSolution(result.text);store.save();send(200,{...solution,provider,language:c.language});return;
+            const solution=decodeSolution(result.text);
+            store.state.providerActivity={provider,fallbackFrom:provider!==c.providerOrder[0]?c.providerOrder[0]:null,at:new Date().toISOString()};
+            store.providerResult(provider,'working');send(200,{...solution,provider,language:c.language});return;
           }catch(e) {
             lastError=e;
+            if(e.kind)store.providerResult(provider,e.kind,e.message);
             if(['key','quota','request'].includes(e.kind)) {
               store.state.disabledProviders[provider]={reason:e.message,kind:e.kind,since:new Date().toISOString()};
               agent.notify(`${provider} API needs attention`,e.message+(agent.chooseProvider()?' — trying the configured backup.':' — reconnect a key to resume.'),'error','leetcode');store.save();continue;
@@ -85,6 +90,13 @@ export function createServer(store,platform,agent) {
         if(!c.leetcode?.enabled)throw Error('LeetCode browser mode is off');
         if(typeof input.code!=='string'||!input.code.trim()||input.code.length>60000)throw Error('Invalid draft code');
         send(200,await localSyntaxCheck(input.code,c.language,c.judge));
+      }else if(route==='POST /api/leetcode/daily-completion') {
+        const input=await body(req);
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(input.date)||!Number.isInteger(input.accepted)||!Number.isInteger(input.target)||input.target<1||input.target>10||input.accepted<input.target||typeof input.username!=='string'||!input.username)throw Error('Invalid daily completion');
+        store.state.leetcodeDailyCompletion[input.date]={username:input.username.slice(0,40),accepted:input.accepted,target:input.target,completedAt:new Date().toISOString()};
+        const cutoff=new Date(Date.parse(input.date+'T00:00:00Z')-14*86400000).toISOString().slice(0,10);
+        for(const date of Object.keys(store.state.leetcodeDailyCompletion))if(date<cutoff)delete store.state.leetcodeDailyCompletion[date];
+        store.save();send(200,{ok:true});
       }else if(route==='POST /api/retry') {const {id}=await body(req);send(202,agent.retry(id));}
       else if(route==='POST /api/plan'){send(200,await buildPlan(store,platform,localTime(new Date(),store.state.config.timezone).date));}
       else if(route==='POST /api/contests') {

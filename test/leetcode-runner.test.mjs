@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {LeetCodeRunner, archiveRetryableAutomaticRun, shouldRetryForLaterSchedule} from '../extension/leetcode-runner.js';
+import {LeetCodeRunner, archiveRetryableAutomaticRun, automaticRetryDecision, latestArchivedAutomaticRun, nextHourlyRetryAt, shouldRetryForLaterSchedule} from '../extension/leetcode-runner.js';
 
 const config = {timezone:'Asia/Kolkata', dailyStartTime:'10:00', autoMode:true,
   dailyQuestionCount:2, maxAttempts:8, language:'python', allowedDifficulties:['Easy'],
@@ -113,6 +113,37 @@ test('minute poll recovers a stopped run made before a later schedule',()=>{
   assert.equal(shouldRetryForLaterSchedule(run,{timezone:'Asia/Kolkata',dailyStartTime:'15:01'},new Date('2026-09-29T09:31:00Z')),true);
   assert.equal(shouldRetryForLaterSchedule({...run,status:'completed'},{timezone:'Asia/Kolkata',dailyStartTime:'15:01'},new Date('2026-09-29T09:31:00Z')),false);
   assert.equal(shouldRetryForLaterSchedule({...run,startedAt:'2026-09-29T09:32:00Z'},{timezone:'Asia/Kolkata',dailyStartTime:'15:01'},new Date('2026-09-29T09:33:00Z')),false);
+});
+
+test('hourly retry waits after failure, wakes immediately for missed first run, and stops after completion',()=>{
+  assert.equal(nextHourlyRetryAt(config,new Date('2026-09-29T04:35:00Z')),'2026-09-29T05:30:00.000Z');
+  assert.equal(automaticRetryDecision(null,config,new Date('2026-09-29T04:29:00Z')).due,false);
+  assert.equal(automaticRetryDecision(null,config,new Date('2026-09-29T05:20:00Z')).due,true);
+  const failed={status:'failed',target:2,finishedAt:'2026-09-29T05:05:00Z',nextRetryAt:'2026-09-29T06:05:00Z',tasks:[{status:'accepted'}]};
+  assert.equal(automaticRetryDecision(failed,config,new Date('2026-09-29T05:59:00Z')).due,false);
+  assert.equal(automaticRetryDecision(failed,config,new Date('2026-09-29T06:06:00Z')).due,true);
+  assert.equal(automaticRetryDecision({...failed,status:'completed',tasks:[{status:'accepted'},{status:'accepted'}]},config,new Date('2026-09-29T06:06:00Z')).due,false);
+  assert.equal(automaticRetryDecision({...failed,status:'interrupted'},config,new Date('2026-09-29T05:20:00Z')).due,true);
+  assert.equal(automaticRetryDecision({...failed,status:'stopped'},config,new Date('2026-09-29T06:20:00Z')).due,false);
+});
+
+test('hourly retry preserves accepted question and solves only the remaining one',async()=>{
+  const previous={id:date,date,mode:'automatic',username:'Leetcoder071',status:'failed',target:2,retryNumber:1,tasks:[
+    {problem:{titleSlug:'already-accepted',title:'Already accepted'},status:'accepted',attempts:1},
+    {problem:{titleSlug:'failed-old',title:'Failed old'},status:'failed',attempts:8,feedback:'Wrong Answer'}]};
+  const runs={[date]:previous};
+  assert.equal(archiveRetryableAutomaticRun(runs,date,'automatic-history:old'),true);
+  assert.equal(latestArchivedAutomaticRun(runs,date,'Leetcoder071')?.tasks[0].problem.titleSlug,'already-accepted');
+  const {runner,runs:saved,calls}=fixture({},runs);
+  runner.start(config,false,2,'Leetcoder071','',[previous.tasks[0]],2);await runner.done;
+  const completed=saved['automatic:2026-09-29:leetcoder071'];
+  assert.equal(completed.status,'completed');
+  assert.equal(completed.retryNumber,2);
+  assert.deepEqual(completed.tasks.map(t=>t.status),['accepted','accepted']);
+  assert.equal(calls.submitted.length,1);
+  assert.equal(calls.discovered[0].count,1);
+  assert.ok(calls.notices[0][0].startsWith('leetcode-run:'));
+  assert.match(calls.notices[0][1],/2\/2 accepted/);
 });
 
 test('concurrent clicks cannot create overlapping runs',async()=>{

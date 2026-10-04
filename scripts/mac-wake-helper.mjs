@@ -10,13 +10,30 @@ const eventsPath=process.env.DAILY_SOLVER_EVENTS_PATH||path.join(project,'data',
 
 function fiveMinutesBefore(time){const[h,m]=time.split(':').map(Number),minutes=(h*60+m-5+1440)%1440;return `${String(Math.floor(minutes/60)).padStart(2,'0')}:${String(minutes%60).padStart(2,'0')}:00`;}
 function pmset(args){if(dryRun){console.log('/usr/bin/pmset '+args.map(x=>JSON.stringify(x)).join(' '));return '';}return execFileSync('/usr/bin/pmset',args,{encoding:'utf8'});}
-function localStamp(date){const d=new Date(date.getTime()-5*60000);return `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}/${String(d.getFullYear()).slice(-2)} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:00`;}
-function savedContests(){try{return JSON.parse(fs.readFileSync(eventsPath,'utf8')).contests||[];}catch{return [];}}
+function stamp(date){return `${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')}/${String(date.getFullYear()).slice(-2)} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}:00`;}
+function localStamp(date){return stamp(new Date(date.getTime()-5*60000));}
+function savedEvents(){try{return JSON.parse(fs.readFileSync(eventsPath,'utf8'));}catch{return {contests:[],retries:[]};}}
+function retryWakes(startTime,now,completed={},target=2){
+  const [hour,minute]=startTime.split(':').map(Number),events=[];
+  for(let day=0;day<2;day++){
+    const base=new Date(now.getFullYear(),now.getMonth(),now.getDate()+day,hour,minute);
+    const date=`${base.getFullYear()}-${String(base.getMonth()+1).padStart(2,'0')}-${String(base.getDate()).padStart(2,'0')}`;
+    if((completed[date]?.accepted||0)>=target)continue;
+    for(let offset=1;offset<=23;offset++){
+      const retry=new Date(base.getTime()+offset*3600000);
+      if(retry.getDate()!==base.getDate())break;
+      const wake=new Date(retry.getTime()-5*60000);
+      if(wake<=now)continue;
+      events.push({owner:`com.daily-solver.retry.${stamp(retry).replace(/\D/g,'')}`,stamp:stamp(wake)});
+    }
+  }
+  return events;
+}
 
 if(cancel){
   pmset(['repeat','cancel']);
-  const events=savedContests();
-  for(const event of events){try{pmset(['schedule','cancel','wakeorpoweron',event.stamp,event.owner]);}catch{}}
+  const events=savedEvents();
+  for(const event of [...(events.contests||[]),...(events.retries||[])]){try{pmset(['schedule','cancel','wakeorpoweron',event.stamp,event.owner]);}catch{}}
   if(!dryRun&&fs.existsSync(eventsPath))fs.unlinkSync(eventsPath);
   console.log('Daily Solver repeating and contest wake events cancelled.');
   process.exit(0);
@@ -30,6 +47,12 @@ const zoneClock=(zone,date)=>new Intl.DateTimeFormat('en-CA',{timeZone:zone,date
 if([new Date(),new Date(Date.now()+180*86400000)].some(d=>zoneClock(systemZone,d)!==zoneClock(config.timezone,d)))throw Error(`Mac timezone (${systemZone}) must match agent timezone (${config.timezone}) for scheduled wake`);
 
 pmset(['repeat','wakeorpoweron','MTWRFSU',fiveMinutesBefore(config.dailyStartTime)]);
+const previous=savedEvents(),retries=config.autoMode&&config.leetcode?.enabled?retryWakes(config.dailyStartTime,new Date(),state.leetcodeDailyCompletion,config.dailyQuestionCount):[];
+const oldRetries=new Map((previous.retries||[]).map(event=>[event.owner,event]));
+const newRetries=new Map(retries.map(event=>[event.owner,event]));
+for(const event of oldRetries.values())if(newRetries.get(event.owner)?.stamp!==event.stamp)try{pmset(['schedule','cancel','wakeorpoweron',event.stamp,event.owner]);}catch{}
+for(const event of newRetries.values())if(oldRetries.get(event.owner)?.stamp!==event.stamp)pmset(['schedule','wakeorpoweron',event.stamp,event.owner]);
+if(!dryRun){fs.mkdirSync(path.dirname(eventsPath),{recursive:true});fs.writeFileSync(eventsPath,JSON.stringify({...previous,daily:fiveMinutesBefore(config.dailyStartTime),retries},null,2),{mode:0o600});}
 const query=`query contestUpcomingContests { contestV2UpcomingContests { title titleSlug startTime duration } }`;
 const response=await fetch('https://leetcode.com/graphql/',{method:'POST',headers:{'content-type':'application/json','user-agent':'Daily Solver Wake Helper/1.0','referer':'https://leetcode.com/contest/'},body:JSON.stringify({query})});
 if(!response.ok)throw Error(`LeetCode contest calendar failed (${response.status})`);
@@ -39,8 +62,7 @@ for(const contest of data.data?.contestV2UpcomingContests||[]){
   if(start.getTime()<now||start.getTime()>week)continue;
   scheduled.push({owner,stamp,title:contest.title});
 }
-const previous=savedContests();
-for(const event of previous){try{pmset(['schedule','cancel','wakeorpoweron',event.stamp,event.owner]);}catch{}}
+for(const event of previous.contests||[]){try{pmset(['schedule','cancel','wakeorpoweron',event.stamp,event.owner]);}catch{}}
 for(const event of scheduled)pmset(['schedule','wakeorpoweron',event.stamp,event.owner]);
-if(!dryRun){fs.mkdirSync(path.dirname(eventsPath),{recursive:true});fs.writeFileSync(eventsPath,JSON.stringify({daily:fiveMinutesBefore(config.dailyStartTime),contests:scheduled},null,2),{mode:0o600});}
-console.log(`Wake schedule refreshed: daily ${fiveMinutesBefore(config.dailyStartTime)}, contests from LeetCode for seven days.`);
+if(!dryRun){fs.mkdirSync(path.dirname(eventsPath),{recursive:true});fs.writeFileSync(eventsPath,JSON.stringify({daily:fiveMinutesBefore(config.dailyStartTime),retries,contests:scheduled},null,2),{mode:0o600});}
+console.log(`Wake schedule refreshed: daily ${fiveMinutesBefore(config.dailyStartTime)}, ${retries.length} hourly retry wakes, contests from LeetCode for seven days.`);

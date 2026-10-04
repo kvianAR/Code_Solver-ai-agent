@@ -1,4 +1,4 @@
-import {LeetCodeRunner, archiveRetryableAutomaticRun, dailyRunForAccount, localClock, shouldRetryForLaterSchedule} from './leetcode-runner.js';
+import {LeetCodeRunner, archiveRetryableAutomaticRun, automaticRetryDecision, dailyRunForAccount, latestArchivedAutomaticRun, localClock, shouldRetryForLaterSchedule} from './leetcode-runner.js';
 async function notify(id,title,message){await chrome.notifications.create(id,{type:'basic',iconUrl:'icon.png',title,message:String(message).slice(0,400)});}
 async function serverApi(connection,route,body,signal){const response=await fetch(connection.url+'/api/'+route,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(120000)]):AbortSignal.timeout(120000)});const value=await response.json().catch(()=>({}));if(!response.ok)throw Error(value.error||`Agent request failed (${response.status})`);return value;}
 async function waitForTab(tabId){const current=await chrome.tabs.get(tabId);if(current.status==='complete')return;await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{chrome.tabs.onUpdated.removeListener(listener);reject(Error('LeetCode page load timed out'));},30000);const listener=(id,info)=>{if(id===tabId&&info.status==='complete'){clearTimeout(timer);chrome.tabs.onUpdated.removeListener(listener);resolve();}};chrome.tabs.onUpdated.addListener(listener);});}
@@ -38,6 +38,10 @@ async function saveRun(run) {
   const {leetcodeRuns={}}=await chrome.storage.local.get('leetcodeRuns');
   leetcodeRuns[run.id || run.date]=run;
   await chrome.storage.local.set({leetcodeRuns});
+  if(run.mode==='automatic'&&run.status==='completed'){
+    const {connection}=await chrome.storage.local.get('connection');
+    if(connection)try{await serverApi(connection,'leetcode/daily-completion',{date:run.date,username:run.username,accepted:run.tasks.filter(t=>t.status==='accepted').length,target:run.target});}catch{}
+  }
 }
 const runner=new LeetCodeRunner({
   load:async()=>(await chrome.storage.local.get('leetcodeRuns')).leetcodeRuns||{},
@@ -96,44 +100,75 @@ async function handleContests(){
   }
   await chrome.storage.local.set({leetcodeContests:contests});
 }
+let pollInFlight=false;
 async function poll(){
+  if(pollInFlight)return;
+  pollInFlight=true;
+  try{
   await ready;
-  const{connection,seenNotifications=[]}=await chrome.storage.local.get(['connection','seenNotifications']);
-  if(!connection)return;
+  const{connection,seenNotifications=[],lastPollAt=0}=await chrome.storage.local.get(['connection','seenNotifications','lastPollAt']);
+  if(!connection){await chrome.storage.local.set({dailyDiagnostic:{kind:'connection',message:'Agent connection is missing. Open Settings to connect.',updatedAt:new Date().toISOString()},lastPollAt:Date.now()});return;}
   try{
     const state=await serverApi(connection,'state'),fresh=state.notifications.filter(n=>!seenNotifications.includes(n.id));
     for(const n of fresh.slice(0,5).reverse())await notify(n.id,n.title,n.message);
     const clock=localClock(state.config.timezone),stored=await chrome.storage.local.get('leetcodeRuns'),leetcodeRuns=stored.leetcodeRuns||{};
-    let account='';
+    let account='',accountError='';
     if(state.config.leetcode?.enabled)try{account=await currentAccount();}catch(error){
+      accountError=error.message;
       const {loginAlertAt=0}=await chrome.storage.local.get('loginAlertAt');
       if(Date.now()-loginAlertAt>3600000){await notify('leetcode-login','LeetCode login needs attention',error.message);await chrome.storage.local.set({loginAlertAt:Date.now()});}
     }
     await chrome.storage.local.set({leetcodeAccount:account});
     let live=dailyRunForAccount(leetcodeRuns,clock.date,account),liveKey=live?.id||clock.date;
+    const recovered=!live?latestArchivedAutomaticRun(leetcodeRuns,clock.date,account):null;
+    let diagnostic={kind:'scheduled',message:`Scheduled for ${state.config.dailyStartTime} ${state.config.timezone}.`,updatedAt:new Date().toISOString()};
     if(state.config.leetcode?.enabled){
       handleContests().catch(()=>{});
-      if(account&&state.config.autoMode&&shouldRetryForLaterSchedule(live,state.config)){
+      const scheduleMoved=account&&state.config.autoMode&&shouldRetryForLaterSchedule(live,state.config);
+      let movedResumeTasks=[],movedRetryNumber=1;
+      if(scheduleMoved&&!runner.active){
+        movedResumeTasks=(live.tasks||[]).filter(t=>t.status==='accepted');
+        movedRetryNumber=(live.retryNumber||0)+1;
         const archiveId=`automatic-history:${clock.date}:${crypto.randomUUID()}`;
         if(archiveRetryableAutomaticRun(leetcodeRuns,liveKey,archiveId)){
           await chrome.storage.local.set({leetcodeRuns});
           live=undefined;
         }
       }
-      if(account&&state.config.autoMode&&clock.time>=state.config.dailyStartTime&&!['completed','prepared','failed','blocked','stopped','interrupted'].includes(live?.status))runner.start(state.config,false,state.config.dailyQuestionCount,account);
+      const previousRun=live||recovered;
+      const decision=automaticRetryDecision(previousRun,state.config);
+      const inactiveGap=lastPollAt&&Date.now()-lastPollAt>5*60000;
+      if(!state.config.autoMode)diagnostic={kind:'paused',message:'Auto Mode is off. Turn it on in Settings.',updatedAt:new Date().toISOString()};
+      else if(!account)diagnostic={kind:'login',message:accountError||'LeetCode is signed out in Brave. Sign in to resume daily work.',updatedAt:new Date().toISOString()};
+      else if(live?.status==='completed')diagnostic={kind:'completed',message:`${live.tasks.filter(t=>t.status==='accepted').length}/${live.target} accepted today.`,updatedAt:new Date().toISOString()};
+      else if(previousRun?.status==='failed'||previousRun?.status==='blocked')diagnostic={kind:previousRun.status,message:`${previousRun.tasks.find(t=>['failed','blocked'].includes(t.status))?.feedback||previousRun.feedback||'Attempt failed'}. ${decision.reason}.`,nextRetryAt:decision.nextAt||'',updatedAt:new Date().toISOString()};
+      else diagnostic={kind:live?.status||'scheduled',message:decision.reason,updatedAt:new Date().toISOString()};
+      if(account&&decision.due&&!runner.active){
+        const resumeTasks=previousRun?(previousRun.tasks||[]).filter(t=>t.status==='accepted'):movedResumeTasks;
+        const retryNumber=previousRun?(previousRun.retryNumber||0)+1:movedRetryNumber;
+        if(live){
+          const archiveId=`automatic-history:${clock.date}:${crypto.randomUUID()}`;
+          if(!archiveRetryableAutomaticRun(leetcodeRuns,liveKey,archiveId))throw Error('Could not save previous daily attempt');
+          await chrome.storage.local.set({leetcodeRuns});
+        }
+        const started=runner.start(state.config,false,state.config.dailyQuestionCount,account,'',resumeTasks,retryNumber);
+        if(started.started)diagnostic={kind:'running',message:inactiveGap?'Missed time while Mac was asleep or Brave inactive; resumed now.':live?'Hourly retry started for remaining questions.':'Daily questions started.',updatedAt:new Date().toISOString()};
+      }
     }
     const today=state.config.leetcode?.enabled?live:state.jobs.find(j=>j.id==='daily:'+state.today),errors=fresh.some(n=>n.kind==='error')||today?.status==='blocked'||today?.status==='failed';
     await chrome.action.setBadgeText({text:state.config.leetcode?.enabled&&!account?'LOGIN':errors?'!':today?.status==='completed'?`${state.config.dailyQuestionCount}/${state.config.dailyQuestionCount}`:''});
     await chrome.action.setBadgeBackgroundColor({color:errors?'#ef6a65':'#318f79'});
-    await chrome.storage.local.set({seenNotifications:state.notifications.map(n=>n.id),lastConnected:Date.now(),lastState:state});
-  }catch{
+    await chrome.storage.local.set({seenNotifications:state.notifications.map(n=>n.id),lastConnected:Date.now(),lastPollAt:Date.now(),lastState:state,dailyDiagnostic:diagnostic});
+  }catch(error){
     await chrome.action.setBadgeText({text:'OFF'});await chrome.action.setBadgeBackgroundColor({color:'#787a91'});
+    await chrome.storage.local.set({dailyDiagnostic:{kind:'connection',message:`Agent unavailable: ${error.message}. Will retry on the next poll.`,updatedAt:new Date().toISOString()},lastPollAt:Date.now()});
     const{outageAlertAt=0}=await chrome.storage.local.get('outageAlertAt');
     if(Date.now()-outageAlertAt>3600000){await notify('server-offline','Agent connection unavailable','Check the server or internet connection.');await chrome.storage.local.set({outageAlertAt:Date.now()});}
   }
+  }finally{pollInFlight=false;}
 }
 async function init(){await chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});await chrome.alarms.create('poll-agent',{periodInMinutes:1});await poll();}
-chrome.runtime.onInstalled.addListener(init);chrome.runtime.onStartup.addListener(init);chrome.alarms.onAlarm.addListener(a=>{if(a.name==='poll-agent')poll();});chrome.notifications.onClicked.addListener(()=>chrome.tabs.create({url:chrome.runtime.getURL('dashboard.html')}));
+chrome.runtime.onInstalled.addListener(init);chrome.runtime.onStartup.addListener(init);chrome.alarms.onAlarm.addListener(a=>{if(a.name==='poll-agent')poll();});chrome.notifications.onClicked.addListener(id=>chrome.tabs.create({url:chrome.runtime.getURL(id.startsWith('leetcode-run:')?`dashboard.html#run=${encodeURIComponent(id.slice('leetcode-run:'.length))}`:'dashboard.html')}));
 chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(sender.id!==chrome.runtime.id || sender.tab && !sender.url?.startsWith(chrome.runtime.getURL('')))return;
   if(message.type==='stop-leetcode') {sendResponse({ok:true,...runner.stop()});return;}

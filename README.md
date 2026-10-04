@@ -113,8 +113,10 @@ Open **Settings & keys**, enter the provider key and model ID, then select **Sav
 - **Manual:** enter the number of questions and click **Prepare N now**.
 - **Automatic:** set the start time, timezone, and questions/day; enable automatic mode and save. The extension uses whichever LeetCode account is signed in to that browser profile at run time.
 - If an automatic run fails, fix the provider or login issue and click **Retry today’s drafts**. Earlier failed attempts remain in history.
+- In Auto Mode, failed or interrupted daily work retries at the next hourly slot until the day's target is accepted. Accepted questions carry forward; the same run is never submitted twice concurrently. Completion cancels the remaining retry wake events after the wake helper refreshes.
 - The extension submits each syntax-checked solution to the account currently signed in to LeetCode.
 - A rejected solution is regenerated with judge feedback until accepted or the attempt limit is reached.
+- Daily result notifications show the accepted count and first failed question. Clicking one opens that exact run in Solution history. Groq and Gemini cards show the last known connection result and which provider handled the latest solution.
 
 A successful connection test checks a small request. It does not guarantee a larger solution request will succeed.
 
@@ -139,7 +141,7 @@ A saved encrypted key takes priority over an environment variable. Deleting a sa
 
 ## Scheduling and a sleeping Mac
 
-**The extension needs a running browser and a signed-in LeetCode session.** A sleeping Mac cannot execute browser code until it wakes. A cloud copy of the server alone does not provide a remote logged-in browser.
+**The extension needs Brave running and a signed-in LeetCode session.** If a 10:00 run is missed, the wake helper schedules hourly wake events and the extension resumes on the next wake/poll. A Mac cannot execute browser code while it remains asleep, and closed-lid or battery behavior can prevent a scheduled wake.
 
 For persistent local scheduling on macOS, run from the project folder:
 
@@ -160,7 +162,9 @@ npm run wake:preview
 npm run background:uninstall
 ```
 
-The helper watches saved state changes and refreshes the daily wake schedule. It also refreshes contest wakes hourly. For a **15:50** practice time, the expected wake time is **15:45**.
+The helper watches saved state changes and refreshes the daily wake schedule, hourly retry wakes, and contest wakes. For a **15:50** practice time, the first wake is **15:45**; if the target is incomplete, another wake is scheduled for **16:45**. The extension retries at the next hourly slot and carries forward already accepted questions, so a 1/2 run needs only one more acceptance. A missed first run starts on wake. The dashboard’s **Why didn’t it run?** panel shows the known reason and next retry time.
+
+After updating this release, run `npm run background:install` again so macOS uses the new wake helper. This requires your administrator password. Reload the unpacked extension in Brave as described below.
 
 For a sleep test, choose a time at least ten minutes ahead, save it, check status, and then put the Mac to sleep. Hardware, closed-lid behavior, battery state, and macOS may affect scheduled waking. This is not guaranteed powered-off execution.
 
@@ -183,7 +187,7 @@ A same-day stopped/failed automatic run can be archived and retried when moved t
 | Questions/day | 1–10 drafts |
 | Manual count | 1–100 drafts; actual availability depends on untouched eligible questions |
 | Difficulties | Any combination of Easy, Medium, Hard |
-| Prefer QOTD | When enabled, QOTD is always question one if it is available and free; the remaining questions stay untouched |
+| Prefer QOTD | When enabled, an eligible untouched QOTD is preferred; otherwise the agent selects another untouched question |
 | Max attempts | 1–8 per question |
 | Provider order | Groq → Gemini or Gemini → Groq |
 | Token budget | 1,000–1,000,000 estimated/reported tokens per day |

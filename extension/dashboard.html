@@ -90,6 +90,11 @@
 <strong id="live-session-status">Practice preparation</strong>
 <p id="live-session-help">The agent generates, checks, submits, and retries solutions on the signed-in LeetCode account.</p>
 </div>
+<div class="card diagnosis-panel">
+<strong>Why didn’t it run?</strong>
+<p id="daily-diagnosis">Checking today’s schedule…</p>
+<small id="next-retry"></small>
+</div>
 <div class="section-label">
 <h2>Automatic daily questions</h2>
 <span id="auto-label" class="pill">Auto mode</span>
@@ -204,12 +209,13 @@
 </form>
 <div class="card">
 <h2>Run while this Mac is sleeping</h2>
-<p>One-time macOS setup is required so the computer can wake five minutes before daily practice and official contests. Keep Brave open before sleep.</p>
+<p>macOS setup wakes the computer five minutes before daily practice, each needed hourly retry, and official contests. Keep Brave open before sleep. Reinstall the helper after this update.</p>
 <pre>npm run background:install</pre>
 <small>This requires the Mac administrator password. It wakes from sleep; it cannot run while fully powered off.</small>
 </div>
 <div id="provider-cards" class="stack">
 </div>
+<p id="provider-fallback" class="muted">No provider has generated a solution yet.</p>
 <form id="platform-form" class="card">
 <h2>Question platform</h2>
 <p>Built-in sandbox includes a foundations-to-advanced roadmap. Connect your own API for real daily questions and contests.</p>

@@ -6,8 +6,8 @@ const countAccepted=run=>(run?.tasks||[]).filter(task=>task.status==='accepted')
 let busy=false;
 function setMessage(message,success=false){$('#message').textContent=message||'';$('#message').classList.toggle('success',success);}
 async function refresh(){
-  const [{connection,lastConnected=0,lastState,leetcodeRuns={},leetcodeAccount=''},[tab],live]=await Promise.all([
-    chrome.storage.local.get(['connection','lastConnected','lastState','leetcodeRuns','leetcodeAccount']),
+  const [{connection,lastConnected=0,lastState,leetcodeRuns={},leetcodeAccount='',dailyDiagnostic},[tab],live]=await Promise.all([
+    chrome.storage.local.get(['connection','lastConnected','lastState','leetcodeRuns','leetcodeAccount','dailyDiagnostic']),
     chrome.tabs.query({active:true,currentWindow:true}),
     chrome.runtime.sendMessage({type:'leetcode-run-status'}).catch(()=>({}))
   ]);
@@ -24,6 +24,7 @@ async function refresh(){
   $('#ring').style.setProperty('--progress',`${Math.min(100,Math.round(accepted/target*100))}%`);
   $('#run-status').textContent=live?.activeId?'Solving now':daily?.status?daily.status.charAt(0).toUpperCase()+daily.status.slice(1):config.autoMode?'Scheduled':'Auto Mode paused';
   $('#schedule').textContent=config.dailyStartTime?`Daily at ${config.dailyStartTime} · ${zone}`:'Set a daily time in dashboard';
+  $('#diagnosis').textContent=dailyDiagnostic?.message||'Waiting for the next scheduler check.';
   let streak=0,day=new Date(`${today}T12:00:00Z`);
   const week=[];
   for(let i=6;i>=0;i--){const d=new Date(day.getTime()-i*86400000),key=localDate(d,zone),run=runs.find(item=>item.mode==='automatic'&&item.date===key),done=countAccepted(run),goal=Number(run?.target)||target;week.push({date:d,done,goal});}
@@ -40,6 +41,6 @@ async function refresh(){
 $('#solve').addEventListener('click',async()=>{busy=true;$('#solve').disabled=true;setMessage('Starting this question…',true);try{const result=await chrome.runtime.sendMessage({type:'solve-current-question'});if(!result?.ok)throw Error(result?.error||'Could not start');if(!result.started)throw Error(result.reason||'A session is already running');setMessage('Started. Progress appears here and in the dashboard.',true);}catch(error){setMessage(error.message);}finally{busy=false;await refresh();}});
 $('#stop').addEventListener('click',async()=>{const result=await chrome.runtime.sendMessage({type:'stop-leetcode'});setMessage(result?.stopped?'Stopping current run…':'No run is active.',!!result?.stopped);await refresh();});
 $('#dashboard').addEventListener('click',()=>chrome.tabs.create({url:chrome.runtime.getURL('dashboard.html')}));
-chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&(changes.leetcodeRuns||changes.lastState||changes.leetcodeAccount))refresh().catch(error=>setMessage(error.message));});
+chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&(changes.leetcodeRuns||changes.lastState||changes.leetcodeAccount||changes.dailyDiagnostic))refresh().catch(error=>setMessage(error.message));});
 refresh().catch(error=>setMessage(error.message));
 setInterval(()=>refresh().catch(()=>{}),3000);

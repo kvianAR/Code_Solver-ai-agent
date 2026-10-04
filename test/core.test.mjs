@@ -160,6 +160,9 @@ test('HTTP dashboard requires token, redacts keys and validates config',async t=
   const r=await fetch(url+'/api/state',{headers}),state=await r.json();assert.equal(r.status,200);assert.ok(!JSON.stringify(state).includes('do-not-expose'));
   assert.equal((await fetch(url+'/api/config',{method:'POST',headers,body:JSON.stringify({maxAttempts:9})})).status,400);
   assert.equal((await fetch(url+'/api/contests',{method:'POST',headers,body:JSON.stringify({name:'Owned benchmark',startAt:new Date(Date.now()+60000).toISOString(),endAt:new Date(Date.now()+120000).toISOString(),problemIds:['two-sum']})})).status,201);
+  assert.equal((await fetch(url+'/api/leetcode/daily-completion',{method:'POST',headers,body:JSON.stringify({date:'2026-10-05',username:'Leetcoder071',accepted:2,target:2})})).status,200);
+  assert.equal(store.state.leetcodeDailyCompletion['2026-10-05'].accepted,2);
+  assert.equal((await fetch(url+'/api/leetcode/daily-completion',{method:'POST',headers,body:JSON.stringify({date:'2026-10-05',username:'Leetcoder071',accepted:0,target:2})})).status,400);
   assert.equal((await fetch(url+'/')).status,200);
 });
 
@@ -181,6 +184,9 @@ test('live practice uses Gemini backup when Groq is temporarily unavailable',asy
   });
   assert.equal(response.status,200);assert.equal((await response.json()).provider,'gemini');
   assert.deepEqual(calls,['groq','gemini']);assert.deepEqual(store.state.disabledProviders,{});
+  assert.equal(store.publicState().providerHealth.groq.status,'temporary');
+  assert.equal(store.publicState().providerHealth.gemini.status,'working');
+  assert.deepEqual({provider:store.publicState().providerActivity.provider,fallbackFrom:store.publicState().providerActivity.fallbackFrom},{provider:'gemini',fallbackFrom:'groq'});
 });
 
 test('quota-blocked provider becomes available on the next local day',t=>{

@@ -83,7 +83,7 @@ export class Agent {
     let changed=false;
     for(const [provider,blocked] of Object.entries(s.disabledProviders)) {
       const quota=blocked.kind==='quota'||blocked.reason==='API quota or balance unavailable';
-      if(quota&&blocked.since&&(localTime(new Date(blocked.since),s.config.timezone).date<today||this.now()-new Date(blocked.since)>=30*60000)){delete s.disabledProviders[provider];changed=true;}
+      if(quota&&blocked.since&&(localTime(new Date(blocked.since),s.config.timezone).date<today||this.now()-new Date(blocked.since)>=30*60000)){delete s.disabledProviders[provider];delete s.providerHealth?.[provider];changed=true;}
     }
     if(changed)this.store.save();
     return s.config.providerOrder.find(p=>this.store.secret(p)&&!s.disabledProviders[p]);
@@ -103,6 +103,8 @@ export class Agent {
       let waitSeconds=Math.min(c.maxRetrySeconds,c.retryBaseSeconds*2**(task.attempts-1));
       try {
         const result=await this.complete(provider,this.store.secret(provider),c.models[provider],prompt,c);
+        this.store.state.providerActivity={provider,fallbackFrom:provider!==c.providerOrder[0]?c.providerOrder[0]:null,at:this.now().toISOString()};
+        this.store.providerResult(provider,'working');
         if(Number.isFinite(result.tokens)&&result.tokens>=0) usage.tokens=Math.max(0,usage.tokens-reserve+result.tokens);
         this.store.save();
         const solution=decodeSolution(result.text);
@@ -113,6 +115,7 @@ export class Agent {
         if(judged.accepted===true){task.status='accepted';task.submissionId=judged.submissionId||'';task.completedAt=this.now().toISOString();this.store.save();return 'accepted';}
       }catch(e) {
         task.feedback=e.message;
+        if(e.kind)this.store.providerResult(provider,e.kind,e.message);
         if(['key','quota','request'].includes(e.kind)) {
           this.store.state.disabledProviders[provider]={reason:e.message,kind:e.kind,since:this.now().toISOString()};
           this.notify(`${provider} API needs attention`,e.message+(this.chooseProvider()?' — trying the configured backup.':' — reconnect a key to resume.'),'error',job.id);
