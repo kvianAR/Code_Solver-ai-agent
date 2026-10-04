@@ -50,16 +50,17 @@ export class LeetCodeRunner {
     }
   }
 
-  start(config, manual = false, requestedCount = 2, accountUsername = '') {
+  start(config, manual = false, requestedCount = 2, accountUsername = '', requestedSlug = '') {
     if (this.active) return {started: false, reason: 'A session is already running', id: this.active.id};
     if (!config.leetcode?.enabled) throw Error('Enable LeetCode browser mode first');
+    if (requestedSlug && (!manual || !/^[a-z0-9-]+$/.test(requestedSlug))) throw Error('Invalid current LeetCode question');
     const manualTarget = Math.max(1, Math.min(100, Math.trunc(Number(requestedCount) || 2)));
     const clock = localClock(config.timezone, this.io.now());
     const id = manual ? `manual:${clock.date}:${this.io.uuid()}` : automaticRunKey(clock.date, accountUsername);
     const controller = new AbortController();
     const active = {id, stop: false, controller};
     this.active = active; // Lock before any asynchronous operation.
-    this.done = this.execute(config, manual, clock, active, manualTarget, accountUsername).finally(() => {
+    this.done = this.execute(config, manual, clock, active, manualTarget, accountUsername, requestedSlug).finally(() => {
       if (this.active === active) this.active = null;
     });
     // Keep failures from becoming unhandled if the dashboard has already closed.
@@ -76,13 +77,13 @@ export class LeetCodeRunner {
     return {stopped: true, id: this.active.id};
   }
 
-  async execute(config, manual, clock, active, manualTarget, accountUsername) {
+  async execute(config, manual, clock, active, manualTarget, accountUsername, requestedSlug = '') {
     let run;
     try {
       const runs = await this.io.load();
       if (!manual && (!config.autoMode || clock.time < config.dailyStartTime || TERMINAL.has(dailyRunForAccount(runs,clock.date,accountUsername)?.status))) return;
       run = {id: active.id, date: clock.date, mode: manual ? 'manual' : 'automatic',
-        target: manual ? manualTarget : config.dailyQuestionCount, status: 'discovering',
+        target: requestedSlug ? 1 : manual ? manualTarget : config.dailyQuestionCount, status: 'discovering',
         startedAt: this.io.now().toISOString(), username:accountUsername, tasks: []};
       await this.io.save(run);
       if (active.stop) return await this.finishStopped(run);
@@ -95,20 +96,32 @@ export class LeetCodeRunner {
         const discovered = await this.io.discover({username: accountUsername, count,
           enforceUsername: !!accountUsername,
           language: config.language, allowedDifficulties: config.allowedDifficulties,
-          preferQuestionOfTheDay, excludeSlugs:[...excludeSlugs], completedCount});
+          preferQuestionOfTheDay, requestedSlug,
+          excludeSlugs:[...excludeSlugs], completedCount});
         if (active.stop) return false;
         if (accountUsername && discovered.username.toLowerCase() !== accountUsername.toLowerCase()) throw Error('LeetCode account changed during this run. Retry with the account currently signed in.');
         run.username = discovered.username;
-        const fresh = discovered.questions.filter(problem => problem?.titleSlug && !excludeSlugs.has(problem.titleSlug));
-        for (const problem of fresh) {
+        const fresh = [];
+        for (const problem of discovered.questions || []) {
+          if (!problem?.titleSlug || run.tasks.some(task => task.problem.titleSlug === problem.titleSlug) ||
+            fresh.some(item => item.titleSlug === problem.titleSlug)) continue;
+          if (requestedSlug !== problem.titleSlug && excludeSlugs.has(problem.titleSlug)) continue;
+          fresh.push(problem);
+        }
+        for (const problem of fresh.slice(0, run.target - run.tasks.length)) {
           excludeSlugs.add(problem.titleSlug);
           run.tasks.push({problem, status: 'pending', attempts: 0, feedback: ''});
         }
-        if (!fresh.length) throw Error('No more untouched eligible LeetCode questions found');
+        if (!fresh.length) return false;
         await this.io.save(run);
         return true;
       };
-      await discoverMore(run.target, config.preferQuestionOfTheDay);
+      for (let pass = 0; run.tasks.length < run.target && pass < 3; pass++) {
+        const found = await discoverMore(run.target - run.tasks.length,
+          !requestedSlug && pass === 0 && config.preferQuestionOfTheDay);
+        if (!found) break;
+      }
+      if (!run.tasks.length) throw Error('No eligible LeetCode question found');
       if (active.stop) return await this.finishStopped(run);
       run.status = 'running';
       await this.io.save(run);

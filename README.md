@@ -108,6 +108,8 @@ Open **Settings & keys**, enter the provider key and model ID, then select **Sav
 
 ### 4. Prepare a session
 
+- **Current question:** open a `leetcode.com/problems/...` page, click the extension icon, then choose **Solve this question**. The compact popup shows today's progress, a seven-day chart, the current account, and a Stop button. This runs one manual session for that exact question, even if it was attempted before.
+- **Full dashboard:** click **Open full dashboard** in the popup to manage the daily schedule, settings, and history.
 - **Manual:** enter the number of questions and click **Prepare N now**.
 - **Automatic:** set the start time, timezone, and questions/day; enable automatic mode and save. The extension uses whichever LeetCode account is signed in to that browser profile at run time.
 - If an automatic run fails, fix the provider or login issue and click **Retry today’s drafts**. Earlier failed attempts remain in history.

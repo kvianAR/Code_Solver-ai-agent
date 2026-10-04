@@ -45,6 +45,37 @@ test('manual session accepts a custom question count up to 100',async()=>{
   assert.equal(calls.submitted.length,4);
 });
 
+test('manual selection replaces an already attempted QOTD to reach its target',async()=>{
+  const earlier={id:'manual:old',date,mode:'manual',username:'Leetcoder071',status:'completed',tasks:[{status:'accepted',problem:{titleSlug:'daily-old'}}]};
+  const {runner,runs,calls}=fixture({discover:async options=>{
+    calls.discovered.push(options);
+    if(calls.discovered.length===1)return{username:'Leetcoder071',questions:[
+      {titleSlug:'daily-old',selection:'QOTD'},
+      {titleSlug:'fresh-one',selection:'ROADMAP'}]};
+    return{username:'Leetcoder071',questions:[{titleSlug:'fresh-two',selection:'ROADMAP'}]};
+  }},{[earlier.id]:earlier});
+  runner.start(config,true,2,'Leetcoder071');await runner.done;
+  const run=Object.values(runs).find(item=>item.id?.startsWith('manual:')&&item.id!==earlier.id);
+  assert.equal(run.status,'completed');
+  assert.deepEqual(run.tasks.map(task=>task.problem.titleSlug),['fresh-one','fresh-two']);
+  assert.equal(calls.discovered.length,2);
+  assert.equal(calls.discovered[1].preferQuestionOfTheDay,false);
+});
+
+test('current-tab solve targets only that slug even if previously accepted',async()=>{
+  const earlier={id:'manual:old',date,mode:'manual',username:'Leetcoder071',status:'completed',tasks:[{status:'accepted',problem:{titleSlug:'two-sum'}}]};
+  const {runner,runs,calls}=fixture({discover:async options=>{
+    calls.discovered.push(options);
+    return{username:'Leetcoder071',questions:[{titleSlug:options.requestedSlug,selection:'CURRENT TAB'}]};
+  }},{[earlier.id]:earlier});
+  runner.start(config,true,1,'Leetcoder071','two-sum');await runner.done;
+  const run=Object.values(runs).find(item=>item.id?.startsWith('manual:')&&item.id!==earlier.id);
+  assert.equal(run.status,'completed');
+  assert.equal(run.target,1);
+  assert.deepEqual(calls.submitted,['two-sum']);
+  assert.equal(calls.discovered[0].requestedSlug,'two-sum');
+});
+
 test('syntax-rejected draft is regenerated before review',async()=>{
   let checks=0;
   const {runner,runs,calls}=fixture({verify:async problem=>{

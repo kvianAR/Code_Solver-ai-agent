@@ -133,7 +133,7 @@ async function poll(){
   }
 }
 async function init(){await chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});await chrome.alarms.create('poll-agent',{periodInMinutes:1});await poll();}
-chrome.runtime.onInstalled.addListener(init);chrome.runtime.onStartup.addListener(init);chrome.alarms.onAlarm.addListener(a=>{if(a.name==='poll-agent')poll();});chrome.action.onClicked.addListener(()=>chrome.tabs.create({url:chrome.runtime.getURL('dashboard.html')}));chrome.notifications.onClicked.addListener(()=>chrome.tabs.create({url:chrome.runtime.getURL('dashboard.html')}));
+chrome.runtime.onInstalled.addListener(init);chrome.runtime.onStartup.addListener(init);chrome.alarms.onAlarm.addListener(a=>{if(a.name==='poll-agent')poll();});chrome.notifications.onClicked.addListener(()=>chrome.tabs.create({url:chrome.runtime.getURL('dashboard.html')}));
 chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(sender.id!==chrome.runtime.id || sender.tab && !sender.url?.startsWith(chrome.runtime.getURL('')))return;
   if(message.type==='stop-leetcode') {sendResponse({ok:true,...runner.stop()});return;}
@@ -165,6 +165,26 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
       const account=await currentAccount();if(!account)throw Error('Sign in to LeetCode in this Brave profile first');
       const count=Math.max(1,Math.min(100,Math.trunc(Number(message.count)||2)));
       return {ok:true,...runner.start(state.config,true,count,account)};
+    })().then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));
+    return true;
+  }
+  if(message.type==='solve-current-question'){
+    (async()=>{
+      await ready;
+      const [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+      const url=tab?.url?new URL(tab.url):null;
+      const slug=url?.origin==='https://leetcode.com'?url.pathname.match(/^\/problems\/([a-z0-9-]+)\/?(?:.*)?$/)?.[1]:null;
+      if(!slug)throw Error('Open a LeetCode question tab, then click Solve this question');
+      if(runner.active)throw Error('Another solution is already running');
+      const {connection}=await chrome.storage.local.get('connection');
+      if(!connection)throw Error('Connect the extension to the agent first');
+      const state=await serverApi(connection,'state');
+      const response=await sendLeetCodeMessage(tab,{type:'leetcode-session'},()=>false);
+      if(!response?.ok)throw Error(response?.error||'Could not check LeetCode login');
+      const account=response.value?.signedIn?response.value.username:'';
+      if(!account)throw Error('Sign in to LeetCode in this tab first');
+      preferredLeetCodeTabId=tab.id;
+      return {ok:true,...runner.start(state.config,true,1,account,slug)};
     })().then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));
     return true;
   }

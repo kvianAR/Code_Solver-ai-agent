@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LeetCode AI Agent</title>
+  <link rel="stylesheet" href="popup.css">
+  <script src="popup.js" defer></script>
+</head>
+<body>
+  <header>
+    <div class="mark">S</div>
+    <div><strong>LeetCode AI Agent</strong><small>Practice status</small></div>
+    <span id="connection" class="connection">Checking</span>
+  </header>
+  <main>
+    <div class="summary">
+      <div class="ring" id="ring"><div><strong id="today-progress">—</strong><small>today</small></div></div>
+      <div class="summary-text"><span id="account">Checking account…</span><strong id="run-status">Checking status…</strong><small id="schedule">Daily schedule unavailable</small></div>
+    </div>
+    <section class="week"><div class="section-title"><strong>Last 7 days</strong><span id="streak">0-day streak</span></div><div class="bars" id="bars"></div></section>
+    <section class="current"><div class="section-title"><strong>Current tab</strong><span id="tab-kind">Question</span></div><div id="question">Open a LeetCode question to solve it here.</div><button id="solve" class="primary" disabled>Solve this question</button><button id="stop" class="stop" hidden>Stop current run</button></section>
+    <p id="message" role="status" aria-live="polite"></p>
+    <button id="dashboard" class="dashboard">Open full dashboard <span aria-hidden="true">↗</span></button>
+  </main>
+</body>
+</html>
