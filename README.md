@@ -60,6 +60,7 @@ flowchart LR
 | 🔐 Local key storage | Provider keys encrypted on the server; extension stores the connection token |
 | 💸 Budget controls | Daily token budget and up to eight generation attempts per question |
 | 🧪 Owned test sandbox | Optional Docker judge and adapter for your own question/contest platform |
+| ✍️ Owned-test solution style | Natural Hinglish explanation and readable code, or a concise style; applies only to the owned sandbox/test-platform agent |
 
 The extension and macOS helper check LeetCode's official contest data about every 56 hours (roughly three times a week). The timetable keeps contests from the last seven days alongside the next seven days, so a contest remains visible after it ends. The helper caches successful results and preserves known wake events if LeetCode is temporarily unavailable. The rolling practice plan refreshes each Monday.
 

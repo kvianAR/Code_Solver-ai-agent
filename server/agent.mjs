@@ -95,7 +95,7 @@ export class Agent {
       if(job.endAt&&this.now()>=new Date(job.endAt)){task.status='failed';task.feedback='Contest deadline reached';return 'failed';}
       const provider=this.chooseProvider();
       if(!provider){task.status='blocked';task.feedback='No working API key. Add or reconnect a provider.';return 'blocked';}
-      const prompt=solutionPrompt(task.problem,c.language,task.feedback);
+      const prompt=solutionPrompt(task.problem,c.language,task.feedback,c.ownedSolutionStyle);
       const date=localTime(this.now(),c.timezone).date, reserve=Math.ceil(prompt.length/3)+c.maxOutputTokens;
       const usage=this.store.state.usage[date] ||= {tokens:0,calls:0};
       if(usage.tokens+reserve>c.dailyTokenBudget){task.status='blocked';task.feedback='Daily token budget reached';return 'blocked';}

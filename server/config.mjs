@@ -8,6 +8,7 @@ export function validateConfig(input) {
     if (!Number.isInteger(c[key]) || c[key] < min || c[key] > max) throw Error(`Invalid ${key}`);
   }
   if (!['python','javascript'].includes(c.language)) throw Error('Language must be python or javascript');
+  if (!['natural','direct'].includes(c.ownedSolutionStyle)) throw Error('Invalid owned test solution style');
   if (!Array.isArray(c.allowedDifficulties) || !c.allowedDifficulties.length || c.allowedDifficulties.some(x=>!['Easy','Medium','Hard'].includes(x))) throw Error('Choose at least one difficulty');
   if (!Array.isArray(c.providerOrder) || !c.providerOrder.length || new Set(c.providerOrder).size !== c.providerOrder.length || c.providerOrder.some(x=>!['groq','gemini'].includes(x))) throw Error('Invalid providers');
   for (const p of ['groq','gemini']) if (typeof c.models?.[p] !== 'string' || !/^[a-zA-Z0-9._\/-]{1,120}$/.test(c.models[p])) throw Error(`Invalid ${p} model`);

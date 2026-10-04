@@ -7,6 +7,7 @@
   "leetcode": {"enabled": true, "username": "your-username", "enforceUsername": false},
   "allowedDifficulties": ["Easy", "Medium", "Hard"],
   "language": "python",
+  "ownedSolutionStyle": "natural",
   "planLengthDays": 14,
   "planRefreshDay": "Monday",
   "maxAttempts": 8,

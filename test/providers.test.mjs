@@ -1,7 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {complete,requestJSON} from '../server/providers.mjs';
+import {complete,requestJSON,solutionPrompt} from '../server/providers.mjs';
 const config={maxOutputTokens:128,requestTimeoutSeconds:5};
+test('owned-test style changes presentation without changing the problem contract',()=>{
+  const problem={title:'Example',statement:'Find the answer',examples:[]};
+  const natural=solutionPrompt(problem,'python','','natural');
+  const direct=solutionPrompt(problem,'python','','direct');
+  assert.match(natural,/descriptive names/);
+  assert.match(natural,/Do not invent a personal story/);
+  assert.match(direct,/concise code/i);
+  assert.match(natural,/Define def solve\(data\)/);
+  assert.match(direct,/Define def solve\(data\)/);
+});
 test('Groq and Gemini use correct headers and parse usage',async()=>{
   const original=globalThis.fetch;
   try {
