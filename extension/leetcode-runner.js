@@ -122,6 +122,8 @@ export class LeetCodeRunner {
       const accountRuns = Object.values(runs).filter(r => !accountUsername || r.username?.toLowerCase() === accountUsername.toLowerCase());
       const excludeSlugs = new Set(accountRuns.flatMap(r =>
         (r.tasks || []).map(t => t.problem?.titleSlug)).filter(Boolean));
+      const acceptedTodaySlugs = new Set(accountRuns.filter(r=>r.date===clock.date).flatMap(r=>
+        (r.tasks||[]).filter(t=>t.status==='accepted').map(t=>t.problem?.titleSlug)).filter(Boolean));
       const completedCount = accountRuns.reduce((n, r) =>
         n + (r.tasks || []).filter(t => t.status === 'accepted').length, 0);
       const discoverMore = async (count, preferQuestionOfTheDay) => {
@@ -129,15 +131,17 @@ export class LeetCodeRunner {
           enforceUsername: !!accountUsername,
           language: config.language, allowedDifficulties: config.allowedDifficulties,
           preferQuestionOfTheDay, requestedSlug,
-          excludeSlugs:[...excludeSlugs], completedCount});
+          excludeSlugs:[...excludeSlugs], acceptedTodaySlugs:[...acceptedTodaySlugs], completedCount});
         if (active.stop) return false;
         if (accountUsername && discovered.username.toLowerCase() !== accountUsername.toLowerCase()) throw Error('LeetCode account changed during this run. Retry with the account currently signed in.');
         run.username = discovered.username;
+        if(discovered.qotdNote)run.selectionNote=discovered.qotdNote;
         const fresh = [];
         for (const problem of discovered.questions || []) {
           if (!problem?.titleSlug || run.tasks.some(task => task.problem.titleSlug === problem.titleSlug) ||
             fresh.some(item => item.titleSlug === problem.titleSlug)) continue;
-          if (requestedSlug !== problem.titleSlug && excludeSlugs.has(problem.titleSlug)) continue;
+          if (requestedSlug !== problem.titleSlug && excludeSlugs.has(problem.titleSlug) &&
+            !(problem.selection==='QOTD'&&!acceptedTodaySlugs.has(problem.titleSlug))) continue;
           fresh.push(problem);
         }
         for (const problem of fresh.slice(0, run.target - run.tasks.length)) {

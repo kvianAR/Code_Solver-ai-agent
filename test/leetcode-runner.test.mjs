@@ -60,6 +60,24 @@ test('manual selection replaces an already attempted QOTD to reach its target',a
   assert.deepEqual(run.tasks.map(task=>task.problem.titleSlug),['fresh-one','fresh-two']);
   assert.equal(calls.discovered.length,2);
   assert.equal(calls.discovered[1].preferQuestionOfTheDay,false);
+  assert.ok(calls.discovered[0].acceptedTodaySlugs.includes('daily-old'));
+});
+
+test('attempted but unaccepted QOTD is retried for daily challenge credit',async()=>{
+  const earlier={id:'manual:old',date,mode:'manual',username:'Leetcoder071',status:'failed',tasks:[{status:'failed',problem:{titleSlug:'daily-today'}}]};
+  const {runner,runs,calls}=fixture({discover:async options=>{
+    calls.discovered.push(options);
+    return {username:'Leetcoder071',qotdNote:'QOTD selected: Daily Today.',questions:[
+      {titleSlug:'daily-today',title:'Daily Today',selection:'QOTD'},
+      {titleSlug:'new-question',title:'New Question',selection:'ROADMAP'}]};
+  }},{[earlier.id]:earlier});
+  runner.start(config,false,2,'Leetcoder071');await runner.done;
+  const run=runs[`automatic:${date}:leetcoder071`];
+  assert.equal(run.status,'completed');
+  assert.deepEqual(run.tasks.map(t=>t.problem.titleSlug),['daily-today','new-question']);
+  assert.ok(calls.discovered[0].excludeSlugs.includes('daily-today'));
+  assert.deepEqual(calls.discovered[0].acceptedTodaySlugs,[]);
+  assert.match(run.selectionNote,/QOTD selected/);
 });
 
 test('current-tab solve targets only that slug even if previously accepted',async()=>{
