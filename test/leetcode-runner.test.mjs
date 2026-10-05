@@ -14,7 +14,7 @@ function fixture(overrides={}, initial={}) {
     now:()=>new Date('2026-09-29T06:00:00Z'), uuid:()=>String(++nextId),
     load:async()=>structuredClone(runs),
     save:async run=>{runs[run.id||run.date]=structuredClone(run);},
-    discover:async options=>{calls.discovered.push(options);return {username:'Leetcoder071',questions:Array.from({length:options.count},(_,i)=>({titleSlug:`question-${calls.discovered.length}-${i}`,title:`Question ${i}`}))};},
+    discover:async options=>{calls.discovered.push(options);return {username:'Leetcoder071',questions:Array.from({length:options.count},(_,i)=>({titleSlug:`question-${calls.discovered.length}-${i}`,title:`Question ${i}`,...(i===0&&options.requireQotd?{selection:'QOTD'}:{selection:'RANDOM'})}))};},
     solve:async()=>{calls.solved++;return {code:'class Solution: pass',provider:'groq'};},
     verify:async(problem)=>{calls.verified.push(problem.titleSlug);return {ok:true,feedback:'Syntax check passed'};},
     submit:async problem=>{calls.submitted.push(problem.titleSlug);return {accepted:true,submissionId:`submission-${calls.submitted.length}`,feedback:'Accepted'};},
@@ -78,6 +78,38 @@ test('attempted but unaccepted QOTD is retried for daily challenge credit',async
   assert.ok(calls.discovered[0].excludeSlugs.includes('daily-today'));
   assert.deepEqual(calls.discovered[0].acceptedTodaySlugs,[]);
   assert.match(run.selectionNote,/QOTD selected/);
+});
+
+test('automatic daily run never completes with two non-QOTD questions',async()=>{
+  const {runner,runs,calls}=fixture({discover:async options=>{
+    calls.discovered.push(options);
+    return {username:'Leetcoder071',questions:[
+      {titleSlug:'random-one',title:'Random One',selection:'RANDOM'},
+      {titleSlug:'random-two',title:'Random Two',selection:'RANDOM'}]};
+  }});
+  runner.start({...config,preferQuestionOfTheDay:false});await runner.done;
+  assert.equal(runs[date].status,'blocked');
+  assert.match(runs[date].feedback,/QOTD was not selected/);
+  assert.equal(runs[date].nextRetryAt,'2026-09-29T06:30:00.000Z');
+  assert.deepEqual(calls.submitted,[]);
+  assert.equal(calls.discovered[0].requireQotd,true);
+  assert.equal(calls.discovered[0].selectionMode,'random');
+});
+
+test('QOTD accepted earlier today counts once and random question fills target',async()=>{
+  const earlier={id:'manual:earlier',date,mode:'manual',username:'Leetcoder071',status:'completed',tasks:[{status:'accepted',submissionId:'old-submission',problem:{titleSlug:'daily-today',selection:'CURRENT TAB'}}]};
+  const {runner,runs,calls}=fixture({discover:async options=>{
+    calls.discovered.push(options);
+    return {username:'Leetcoder071',questions:[
+      {titleSlug:'daily-today',title:'Daily Today',selection:'QOTD',alreadyAcceptedToday:true},
+      {titleSlug:'random-new',title:'Random New',selection:'RANDOM'}]};
+  }},{[earlier.id]:earlier});
+  runner.start(config,false,2,'Leetcoder071');await runner.done;
+  const run=runs[`automatic:${date}:leetcoder071`];
+  assert.equal(run.status,'completed');
+  assert.deepEqual(run.tasks.map(t=>t.problem.selection),['QOTD','RANDOM']);
+  assert.equal(run.tasks[0].submissionId,'old-submission');
+  assert.deepEqual(calls.submitted,['random-new']);
 });
 
 test('current-tab solve targets only that slug even if previously accepted',async()=>{
@@ -217,7 +249,7 @@ test('worker recovery preserves completed results and marks unfinished work inte
 test('automatic sessions are separate for each signed-in LeetCode account',async()=>{
   const {runner,runs,calls}=fixture({discover:async options=>{
     calls.discovered.push(options);
-    return {username:options.username,questions:[{titleSlug:'same-question',title:'Same question'},{titleSlug:'second-question',title:'Second question'}]};
+    return {username:options.username,questions:[{titleSlug:'same-question',title:'Same question',selection:'QOTD'},{titleSlug:'second-question',title:'Second question',selection:'RANDOM'}]};
   }});
   runner.start(config,false,2,'FirstUser');await runner.done;
   runner.start(config,false,2,'SecondUser');await runner.done;

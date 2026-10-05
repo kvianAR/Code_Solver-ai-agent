@@ -1,6 +1,6 @@
 const $=s=>document.querySelector(s);
 const extension=typeof chrome!=='undefined'&&!!chrome.runtime?.id;
-const UI_BUILD='2.8.3';
+const UI_BUILD='2.8.4';
 if(extension)chrome.storage.local.get('uiBuild').then(({uiBuild})=>{if(uiBuild!==UI_BUILD)chrome.storage.local.set({uiBuild:UI_BUILD}).then(()=>chrome.runtime.reload());});
 let connection=null,state=null,catalog=[],page='today',busy=false,leetcodeRuns={},leetcodeContests=[],contestCalendarUpdatedAt=0,contestCalendarError='',liveRun=null,leetcodeAccount='',activeRunId=null,stopping=false,dailyDiagnostic=null;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -63,7 +63,7 @@ function renderSettings(){
   const c=state.config,f=$('#settings-form');
   for(const key of ['dailyStartTime','timezone','dailyQuestionCount','language','maxAttempts','dailyTokenBudget','notificationWebhook'])f.elements[key].value=c[key];
   f.elements.providerOrder.value=c.providerOrder.join(',');
-  for(const key of ['autoMode','preferQuestionOfTheDay'])f.elements[key].checked=c[key];
+  f.elements.autoMode.checked=c.autoMode;f.elements.preferQuestionOfTheDay.checked=true;
   for(const d of ['Easy','Medium','Hard'])f.elements[d].checked=c.allowedDifficulties.includes(d);
   const platform=$('#platform-form');platform.elements.type.value=c.platform.type;platform.elements.baseUrl.value=c.platform.baseUrl;platform.elements.ownedSolutionStyle.value=c.ownedSolutionStyle;
   const healthLabel=(p)=>{const health=state.providerHealth?.[p],blocked=state.disabledProviders?.[p],kind=blocked?.kind||health?.status;if(!state.providers[p].configured)return'Not configured';if(kind==='key')return'Invalid key';if(kind==='quota')return'Quota exhausted';if(kind==='rate')return'Rate limited';if(kind==='temporary'||kind==='request')return'Needs attention';return health?.status==='working'?'Working':'Key saved · Untested';};
@@ -109,7 +109,7 @@ $('#settings-form').addEventListener('submit',e=>{
   e.preventDefault();
   const f=e.currentTarget,previousTime=state.config.dailyStartTime,previousTimezone=state.config.timezone;
   action(async()=>{
-    await api('config',{dailyStartTime:f.elements.dailyStartTime.value,timezone:f.elements.timezone.value,dailyQuestionCount:Number(f.elements.dailyQuestionCount.value),language:f.elements.language.value,maxAttempts:Number(f.elements.maxAttempts.value),dailyTokenBudget:Number(f.elements.dailyTokenBudget.value),providerOrder:f.elements.providerOrder.value.split(','),autoMode:f.elements.autoMode.checked,preferQuestionOfTheDay:f.elements.preferQuestionOfTheDay.checked,allowedDifficulties:['Easy','Medium','Hard'].filter(d=>f.elements[d].checked),notificationWebhook:f.elements.notificationWebhook.value,leetcode:{enforceUsername:false}});
+    await api('config',{dailyStartTime:f.elements.dailyStartTime.value,timezone:f.elements.timezone.value,dailyQuestionCount:Number(f.elements.dailyQuestionCount.value),language:f.elements.language.value,maxAttempts:Number(f.elements.maxAttempts.value),dailyTokenBudget:Number(f.elements.dailyTokenBudget.value),providerOrder:f.elements.providerOrder.value.split(','),autoMode:f.elements.autoMode.checked,preferQuestionOfTheDay:true,allowedDifficulties:['Easy','Medium','Hard'].filter(d=>f.elements[d].checked),notificationWebhook:f.elements.notificationWebhook.value,leetcode:{enforceUsername:false}});
     if(!extension)return;
     const scheduleChanged=previousTime!==f.elements.dailyStartTime.value||previousTimezone!==f.elements.timezone.value;
     if(scheduleChanged){

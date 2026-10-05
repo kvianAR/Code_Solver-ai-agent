@@ -1,5 +1,6 @@
 const TERMINAL = new Set(['completed', 'prepared', 'failed', 'blocked', 'stopped', 'interrupted']);
 const ACTIVE = new Set(['discovering', 'running', 'stopping']);
+export const hasAcceptedQotd = run => (run?.tasks||[]).some(t=>t.problem?.selection==='QOTD'&&t.status==='accepted');
 export const automaticRunKey = (date, username) => username ? `automatic:${date}:${username.toLowerCase()}` : date;
 export function dailyRunForAccount(runs, date, username) {
   if (!username) return runs[date] || null;
@@ -36,7 +37,7 @@ export function automaticRetryDecision(run, config, now = new Date()) {
   if (!config.autoMode || !config.leetcode?.enabled) return {due:false, reason:'Auto Mode is off'};
   if (clock.time < config.dailyStartTime) return {due:false, reason:`Scheduled for ${config.dailyStartTime}`};
   if (!run) return {due:true, reason:'Scheduled time passed; starting now'};
-  if (run.status === 'completed' || (run.tasks || []).filter(t=>t.status==='accepted').length >= config.dailyQuestionCount) return {due:false, reason:'Daily target completed'};
+  if (run.status === 'completed' || ((run.tasks || []).filter(t=>t.status==='accepted').length >= config.dailyQuestionCount&&hasAcceptedQotd(run))) return {due:false, reason:'Daily target completed'};
   if (ACTIVE.has(run.status)) return {due:false, reason:'Daily run is in progress'};
   if (run.status === 'stopped') return {due:false, reason:'Stopped manually; use Retry today to resume'};
   if (!['failed','blocked','interrupted'].includes(run.status)) return {due:false, reason:'Daily run is already scheduled'};
@@ -127,10 +128,11 @@ export class LeetCodeRunner {
       const completedCount = accountRuns.reduce((n, r) =>
         n + (r.tasks || []).filter(t => t.status === 'accepted').length, 0);
       const discoverMore = async (count, preferQuestionOfTheDay) => {
+        const requireQotd=!manual&&!run.tasks.some(t=>t.problem?.selection==='QOTD');
         const discovered = await this.io.discover({username: accountUsername, count,
           enforceUsername: !!accountUsername,
           language: config.language, allowedDifficulties: config.allowedDifficulties,
-          preferQuestionOfTheDay, requestedSlug,
+          preferQuestionOfTheDay, requireQotd, selectionMode:manual?'roadmap':'random', requestedSlug,
           excludeSlugs:[...excludeSlugs], acceptedTodaySlugs:[...acceptedTodaySlugs], completedCount});
         if (active.stop) return false;
         if (accountUsername && discovered.username.toLowerCase() !== accountUsername.toLowerCase()) throw Error('LeetCode account changed during this run. Retry with the account currently signed in.');
@@ -141,12 +143,13 @@ export class LeetCodeRunner {
           if (!problem?.titleSlug || run.tasks.some(task => task.problem.titleSlug === problem.titleSlug) ||
             fresh.some(item => item.titleSlug === problem.titleSlug)) continue;
           if (requestedSlug !== problem.titleSlug && excludeSlugs.has(problem.titleSlug) &&
-            !(problem.selection==='QOTD'&&!acceptedTodaySlugs.has(problem.titleSlug))) continue;
+            !(problem.selection==='QOTD'&&(!manual||!acceptedTodaySlugs.has(problem.titleSlug)))) continue;
           fresh.push(problem);
         }
         for (const problem of fresh.slice(0, run.target - run.tasks.length)) {
           excludeSlugs.add(problem.titleSlug);
-          run.tasks.push({problem, status: 'pending', attempts: 0, feedback: ''});
+          const prior=problem.selection==='QOTD'&&problem.alreadyAcceptedToday?accountRuns.flatMap(r=>r.date===clock.date?r.tasks||[]:[]).find(t=>t.status==='accepted'&&t.problem?.titleSlug===problem.titleSlug):null;
+          run.tasks.push(prior?{...structuredClone(prior),problem,status:'accepted'}:{problem,status:'pending',attempts:0,feedback:''});
         }
         if (!fresh.length) return false;
         await this.io.save(run);
@@ -154,11 +157,13 @@ export class LeetCodeRunner {
       };
       for (let pass = 0; run.tasks.length < run.target && pass < 3; pass++) {
         const found = await discoverMore(run.target - run.tasks.length,
-          !requestedSlug && pass === 0 && config.preferQuestionOfTheDay);
+          !requestedSlug && pass === 0 && (manual?config.preferQuestionOfTheDay:true));
         if (!found) break;
       }
+      if(!manual&&!run.tasks.some(t=>t.problem?.selection==='QOTD'))throw Error('QOTD was not selected; daily target will retry instead of counting random questions');
       if (!run.tasks.length) throw Error('No eligible LeetCode question found');
       if (active.stop) return await this.finishStopped(run);
+      if(!manual)run.tasks.sort((a,b)=>Number(b.problem?.selection==='QOTD')-Number(a.problem?.selection==='QOTD'));
       run.status = 'running';
       await this.io.save(run);
       for (const task of run.tasks) {
@@ -209,7 +214,7 @@ export class LeetCodeRunner {
         if (task.status === 'blocked') break;
       }
       const readyCount = run.tasks.filter(t => t.status === 'accepted').length;
-      run.status = readyCount === run.target ? 'completed' : run.tasks.some(t => t.status === 'blocked') ? 'blocked' : 'failed';
+      run.status = readyCount === run.target && (manual||hasAcceptedQotd(run)) ? 'completed' : run.tasks.some(t => t.status === 'blocked') ? 'blocked' : 'failed';
       if (run.status === 'blocked') for (const task of run.tasks) if (task.status === 'pending') {task.status='skipped';task.feedback='Earlier question was blocked; retry after fixing the provider.';}
       run.finishedAt = this.io.now().toISOString();
       if (!manual && run.status !== 'completed') run.nextRetryAt = nextHourlyRetryAt(config,this.io.now());

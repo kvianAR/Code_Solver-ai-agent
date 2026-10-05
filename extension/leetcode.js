@@ -40,21 +40,23 @@
     }
     const allowed=new Set(options.allowedDifficulties||['Easy','Medium','Hard']),chosen=[],seen=new Set(options.excludeSlugs||[]);
     let qotdNote='';
-    if(options.preferQuestionOfTheDay){
+    if(options.requireQotd||options.preferQuestionOfTheDay){
       try{
         const daily=(await graphql(DAILY_QUERY)).activeDailyCodingChallengeQuestion?.question;
-        if(!daily?.titleSlug)qotdNote='LeetCode did not return a Question of the Day; using another question.';
-        else if((options.acceptedTodaySlugs||[]).includes(daily.titleSlug))qotdNote=`QOTD ${daily.title} was already accepted today; using another question.`;
+        if(!daily?.titleSlug){if(options.requireQotd)throw Error('LeetCode did not return today’s QOTD');qotdNote='LeetCode did not return a Question of the Day; using another question.';}
+        else if(!options.requireQotd&&(options.acceptedTodaySlugs||[]).includes(daily.titleSlug))qotdNote=`QOTD ${daily.title} was already accepted today; using another question.`;
         else{
           const full=await question(daily.titleSlug,options.language);
-          if(full&&!full.paidOnly){full.selection='QOTD';chosen.push(full);seen.add(full.titleSlug);qotdNote=`QOTD selected: ${full.title}.`;}
-          else qotdNote='QOTD is unavailable or Premium; using another question.';
+          if(full&&!full.paidOnly){full.selection='QOTD';full.alreadyAcceptedToday=(options.acceptedTodaySlugs||[]).includes(full.titleSlug);chosen.push(full);seen.add(full.titleSlug);qotdNote=`QOTD selected: ${full.title}.`;}
+          else {if(options.requireQotd)throw Error('Today’s QOTD is unavailable or Premium');qotdNote='QOTD is unavailable or Premium; using another question.';}
         }
-      }catch{qotdNote='QOTD lookup failed; using another question.';}
+      }catch(error){if(options.requireQotd)throw Error(`QOTD required: ${error.message}`);qotdNote='QOTD lookup failed; using another question.';}
     }
     const completed=Math.max(0,Number(options.completedCount)||0),start=Math.min(Math.floor(completed/10)*10,Math.max(0,ROADMAP.length-20));
-    const ordered=[...shuffle(ROADMAP.slice(start,start+20)),...shuffle(ROADMAP.slice(0,start)),...shuffle(ROADMAP.slice(start+20))];
-    for(const slug of ordered){if(chosen.length>=options.count)break;if(seen.has(slug))continue;const q=await question(slug,options.language);if(q&&!q.paidOnly&&q.status==null&&allowed.has(q.difficulty)){q.selection='ROADMAP';chosen.push(q);seen.add(slug);}}
+    if(options.selectionMode!=='random'){
+      const ordered=[...shuffle(ROADMAP.slice(start,start+20)),...shuffle(ROADMAP.slice(0,start)),...shuffle(ROADMAP.slice(start+20))];
+      for(const slug of ordered){if(chosen.length>=options.count)break;if(seen.has(slug))continue;const q=await question(slug,options.language);if(q&&!q.paidOnly&&q.status==null&&allowed.has(q.difficulty)){q.selection='ROADMAP';chosen.push(q);seen.add(slug);}}
+    }
     if(chosen.length<options.count){
       const slugs=await problemsetSlugs(allowed,seen,options.count-chosen.length);
       for(const slug of slugs){
