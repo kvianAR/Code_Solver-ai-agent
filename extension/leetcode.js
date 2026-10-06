@@ -5,13 +5,23 @@
     'contains-duplicate','valid-anagram','valid-palindrome','best-time-to-buy-and-sell-stock','binary-search','valid-parentheses','merge-sorted-array','remove-duplicates-from-sorted-array','move-zeroes','majority-element','intersection-of-two-arrays','single-number','missing-number','reverse-string','first-unique-character-in-a-string','ransom-note','isomorphic-strings','word-pattern','linked-list-cycle','middle-of-the-linked-list','reverse-linked-list','merge-two-sorted-lists','maximum-depth-of-binary-tree','same-tree','invert-binary-tree','symmetric-tree','diameter-of-binary-tree','balanced-binary-tree','flood-fill','number-of-islands','climbing-stairs','min-cost-climbing-stairs','house-robber','maximum-subarray','product-of-array-except-self','top-k-frequent-elements','group-anagrams','longest-substring-without-repeating-characters','three-sum','container-with-most-water','search-in-rotated-sorted-array','find-minimum-in-rotated-sorted-array','combination-sum','permutations','subsets','word-search','validate-binary-search-tree','binary-tree-level-order-traversal','lowest-common-ancestor-of-a-binary-search-tree','kth-smallest-element-in-a-bst','course-schedule','clone-graph','rotting-oranges','coin-change','longest-increasing-subsequence','unique-paths','decode-ways','longest-common-subsequence','merge-intervals','insert-interval','trapping-rain-water','minimum-window-substring','median-of-two-sorted-arrays','serialize-and-deserialize-binary-tree','word-ladder'
   ];
   async function graphql(query, variables = {}) {
-    const response = await fetch('/graphql/', {method:'POST',credentials:'include',headers:{'content-type':'application/json','x-requested-with':'XMLHttpRequest'},body:JSON.stringify({query,variables})});
-    if (!response.ok) throw Error(`LeetCode connection failed (${response.status})`);
-    const value=await response.json();if(value.errors?.length)throw Error(value.errors[0].message||'LeetCode GraphQL error');return value.data;
+    for(let attempt=0;attempt<3;attempt++){
+      try{
+        const response = await fetch('/graphql/', {method:'POST',credentials:'include',headers:{'content-type':'application/json','x-requested-with':'XMLHttpRequest'},body:JSON.stringify({query,variables})});
+        if(!response.ok){
+          if((response.status===429||response.status>=500)&&attempt<2){await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));continue;}
+          throw Error(`LeetCode connection failed (${response.status})`);
+        }
+        const value=await response.json();if(value.errors?.length)throw Error(value.errors[0].message||'LeetCode GraphQL error');return value.data;
+      }catch(error){
+        if(attempt===2||!/fetch|network|timed out/i.test(error.message))throw error;
+        await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));
+      }
+    }
   }
   const QUESTION_QUERY=`query questionData($titleSlug: String!) { question(titleSlug: $titleSlug) { questionId questionFrontendId title titleSlug content difficulty isPaidOnly status codeSnippets { lang langSlug code } topicTags { name slug } } }`;
   const DAILY_QUERY=`query questionOfToday { activeDailyCodingChallengeQuestion { date link question { title titleSlug difficulty isPaidOnly } } }`;
-  const LIST_QUERY=`query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $filters: QuestionListFilterInput) { problemsetQuestionList: questionList(categorySlug: $categorySlug, limit: $limit, skip: $skip, filters: $filters) { total questions { titleSlug difficulty paidOnly: isPaidOnly status } } }`;
+  const LIST_QUERY=`query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $filters: QuestionListFilterInput) { problemsetQuestionList: questionList(categorySlug: $categorySlug, limit: $limit, skip: $skip, filters: $filters) { total: totalNum questions: data { titleSlug difficulty paidOnly: isPaidOnly status } } }`;
   const USER_QUERY=`query globalData { userStatus { isSignedIn username } }`;
   function plainText(html){const doc=new DOMParser().parseFromString(String(html||''),'text/html');doc.querySelectorAll('script,style').forEach(n=>n.remove());return(doc.body.textContent||'').replace(/\n\s*\n\s*\n+/g,'\n\n').trim();}
   async function question(slug,language){const q=(await graphql(QUESTION_QUERY,{titleSlug:slug})).question;if(!q)return null;const langSlug=language==='javascript'?'javascript':'python3',snippet=q.codeSnippets?.find(x=>x.langSlug===langSlug)||q.codeSnippets?.[0];return{id:q.questionId,frontendId:q.questionFrontendId,title:q.title,titleSlug:q.titleSlug,difficulty:q.difficulty,paidOnly:!!q.isPaidOnly,status:q.status||null,statement:plainText(q.content),starterCode:snippet?.code||'',langSlug:snippet?.langSlug||langSlug,topics:(q.topicTags||[]).map(x=>x.name)};}
@@ -24,7 +34,7 @@
         for(const item of list?.questions||[])if(item?.titleSlug&&!seen.has(item.titleSlug)&&!item.paidOnly&&item.status==null&&allowed.has(item.difficulty))candidates.push(item.titleSlug);
         if(!list||skip+100>=list.total)break;
       }
-    }catch{}
+    }catch(error){throw Error(`LeetCode question list unavailable: ${error.message}`);}
     return shuffle(candidates);
   }
   async function discover(options){
