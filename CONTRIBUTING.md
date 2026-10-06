@@ -7,6 +7,8 @@
 
 For bug reports, include your browser, OS, extension version, and redacted error message. Do not upload `data/`, API keys, connection tokens, cookies, or account credentials.
 
-Keep the live LeetCode workflow focused on preparation and user review. Changes must preserve the distinction between syntax validation and correctness. Do not label generated drafts as Accepted submissions.
+Keep the live LeetCode workflow honest about submission status. Syntax validation only checks the draft; show "Accepted" only after LeetCode returns an accepted result.
+
+To have commits appear on your GitHub contribution graph, set this repository's Git author email to an address connected to your GitHub account or to your GitHub-provided `noreply` address before committing. A local machine address such as `user@computer.local` will not be attributed to your GitHub profile.
 
 README visuals are editable SVG files in `docs/assets/`. Keep their text accessible and document whether any new image is an illustration or an actual screenshot.
