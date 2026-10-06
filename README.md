@@ -21,7 +21,7 @@ Scheduled LeetCode practice drafts · Manual batches · Review-first workflow ·
 
 LeetCode AI Agent is a local AI practice assistant with a Brave/Chrome extension. Choose a time and a question count: it discovers untouched LeetCode problems, generates solutions with **Groq or Gemini**, checks syntax, submits them on the signed-in account, and records LeetCode's result.
 
-For daily practice sessions, the extension generates a solution, runs a local syntax check, submits it to LeetCode on the currently signed-in browser account, and retries rejected solutions up to the configured attempt limit. Live rated contests remain reminder-and-open only. AI solving and submissions pause while an official contest is live; the contest is for the participant to solve without external code generation, as required by [LeetCode's contest rules](https://leetcode.com/discuss/post/951105/new-contest-rule-effective-from-december-2020/).
+For daily practice sessions, the extension generates a solution, runs a local syntax check, submits it to LeetCode on the currently signed-in browser account, and retries rejected solutions up to the configured attempt limit. The installed extension is named **Practice Ex.** Live rated contests send reminders and can be opened from the timetable. AI solving and submissions pause while an official contest is live; the contest is for the participant to solve without external code generation, as required by [LeetCode's contest rules](https://leetcode.com/discuss/post/951105/new-contest-rule-effective-from-december-2020/).
 
 > **Project status: experimental.** This is an unpacked extension, not a Chrome Web Store release. LeetCode session APIs and provider model availability can change. Syntax checks do not prove solution correctness. Live API generation depends on your account access, quota, and provider uptime.
 
@@ -38,7 +38,7 @@ flowchart LR
     C --> D[Local server: Groq / Gemini]
     D --> E[Compile-only syntax check]
     E --> F[Saved draft + explanation]
-    F --> G[Open problem tabs]
+    F --> G[Use signed-in tab or temporary background tab]
     G --> H[Submit to LeetCode and poll result]
 ```
 
@@ -55,7 +55,8 @@ flowchart LR
 | 📝 Draft history | Generated code, explanation, complexity, attempt counts, and failure feedback |
 | 🔎 Syntax validation | Python compile-only parsing and JavaScript `node --check`; code is not executed |
 | 🛑 Stop control | Cancels the preparation session and preserves already prepared drafts |
-| 🗓️ Contest calendar | Next seven days, official start times, reminders, and automatic contest-page opening |
+| 🗓️ Contest calendar | Next seven days, official start times, reminders, and a link to open each contest yourself |
+| 🧹 Quiet browser tabs | Idle checks do not open LeetCode; a tab created for a scheduled or manual run closes when that run finishes |
 | 🌙 macOS wake helper | Wake five minutes before practice or a listed contest; persistent background setup |
 | 🔐 Local key storage | Provider keys encrypted on the server; extension stores the connection token |
 | 💸 Budget controls | Daily token budget and up to eight generation attempts per question |
@@ -117,11 +118,11 @@ Keep this connection token private.
 1. Open `brave://extensions` or `chrome://extensions`.
 2. Enable **Developer mode**.
 3. Select **Load unpacked** and choose this repository's `extension/` folder.
-4. Open **LeetCode AI Agent** from the browser toolbar.
+4. Open **Practice Ex.** from the browser toolbar.
 5. Enter `http://localhost:8787` and the connection token.
 6. Keep LeetCode signed in in the same browser profile.
 
-The localhost dashboard is useful for settings, but the **extension dashboard** is required for discovering account-specific questions and opening review tabs.
+The localhost dashboard is useful for settings, but the **extension dashboard** is required for discovering account-specific questions. An automatic or manual run uses an existing LeetCode tab when available. If none is open, it creates a background tab for the run and closes that tab afterward. Clicking the extension icon alone does not open LeetCode.
 
 ### 3. Connect an AI provider
 
