@@ -18,12 +18,12 @@ async function refresh(){
   const account=leetcodeAccount||'';
   const runs=Object.values(leetcodeRuns).filter(run=>account&&run.username?.toLowerCase()===account.toLowerCase());
   const daily=runs.find(run=>run.mode==='automatic'&&run.date===today);
-  const accepted=countAccepted(daily);
+  const accepted=countAccepted(daily),todayTarget=Number(daily?.target)||target;
   $('#account').textContent=account?`Signed in: ${account}`:'LeetCode login needed';
-  $('#today-progress').textContent=`${accepted}/${target}`;
-  $('#ring').style.setProperty('--progress',`${Math.min(100,Math.round(accepted/target*100))}%`);
+  $('#today-progress').textContent=`${accepted}/${todayTarget}`;
+  $('#ring').style.setProperty('--progress',`${Math.min(100,Math.round(accepted/todayTarget*100))}%`);
   $('#run-status').textContent=live?.activeId?'Solving now':daily?.status?daily.status.charAt(0).toUpperCase()+daily.status.slice(1):config.autoMode?'Scheduled':'Auto Mode paused';
-  $('#schedule').textContent=config.dailyStartTime?`Daily at ${config.dailyStartTime} · ${zone}`:'Set a daily time in dashboard';
+  $('#schedule').textContent=daily?.status==='completed'&&todayTarget!==target?`Tomorrow: ${target} questions at ${config.dailyStartTime} · ${zone}`:config.dailyStartTime?`Daily at ${config.dailyStartTime} · ${zone}`:'Set a daily time in dashboard';
   $('#diagnosis').textContent=dailyDiagnostic?.message||'Waiting for the next scheduler check.';
   let streak=0,day=new Date(`${today}T12:00:00Z`);
   const week=[];

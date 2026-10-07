@@ -2,3 +2,4 @@
 
 .session-controls{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}.manual-count{width:88px}.manual-count input{margin-top:4px;padding:10px}.session-panel{margin:22px 0}.session-panel p{margin:8px 0 0}#stop-solving{color:var(--red);border-color:#edcaca}.link-button{display:inline-block;padding:9px 14px;border-radius:9px;margin-top:4px}
 .diagnosis-panel{margin:0 0 22px}.diagnosis-panel p{margin:7px 0;color:var(--ink)}.diagnosis-panel small{display:block}
+#next-daily-target{display:block;margin-top:6px;color:var(--green)}

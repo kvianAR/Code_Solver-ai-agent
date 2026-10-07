@@ -57,7 +57,7 @@
 <p>Daily questions, generated and submitted on your signed-in account.</p>
 </div>
 <div class="session-controls">
-<label class="manual-count">Questions<input id="manual-count" type="number" min="1" max="100" value="2" inputmode="numeric"></label>
+<label class="manual-count">Manual questions<input id="manual-count" type="number" min="1" max="100" value="2" inputmode="numeric"></label>
 <button id="run-now" class="primary">▶ Prepare 2 now</button>
 <button id="stop-solving" class="quiet" disabled>■ Stop</button>
 </div>
@@ -67,6 +67,7 @@
 <span>Today's automatic progress</span>
 <strong id="daily-count">0 / 2</strong>
 <small id="daily-status">Scheduled</small>
+<small id="next-daily-target" hidden></small>
 </article>
 <article class="card">
 <span>Accepted streak</span>

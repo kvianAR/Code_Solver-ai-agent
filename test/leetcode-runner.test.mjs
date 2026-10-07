@@ -112,6 +112,16 @@ test('QOTD accepted earlier today counts once and random question fills target',
   assert.deepEqual(calls.submitted,['random-new']);
 });
 
+test('increasing the saved daily target starts the next automatic run with three questions',async()=>{
+  const {runner,runs,calls}=fixture();
+  runner.start({...config,dailyQuestionCount:3},false,2,'Leetcoder071');await runner.done;
+  const run=runs[`automatic:${date}:leetcoder071`];
+  assert.equal(run.target,3);
+  assert.equal(run.status,'completed');
+  assert.deepEqual(run.tasks.map(task=>task.problem.selection),['QOTD','RANDOM','RANDOM']);
+  assert.equal(calls.submitted.length,3);
+});
+
 test('current-tab solve targets only that slug even if previously accepted',async()=>{
   const earlier={id:'manual:old',date,mode:'manual',username:'Leetcoder071',status:'completed',tasks:[{status:'accepted',problem:{titleSlug:'two-sum'}}]};
   const {runner,runs,calls}=fixture({discover:async options=>{
