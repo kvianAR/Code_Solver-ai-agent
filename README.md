@@ -1,4 +1,4 @@
-<div align="center">
+ <div align="center">
 
 ![LeetCode AI Agent — your practice autopilot](docs/assets/banner.svg)
 
