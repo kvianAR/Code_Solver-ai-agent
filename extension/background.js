@@ -146,8 +146,13 @@ async function handleContests(){
       if(now>=start-offset&&now<start&&!contest.reminders[name]){contest.reminders[name]=new Date().toISOString();await notify(`contest-${contest.id}-${name}`,`${contest.title} upcoming`,`${name==='24h'?'Tomorrow':'In one hour'} at ${new Date(contest.startAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}.`);}
     }
     if(now>=start&&now<end&&!contest.openedAt){
+      const url=new URL(contest.url);
+      if(url.origin!=='https://leetcode.com'||!/^\/contest\/[a-z0-9-]+\/?$/.test(url.pathname))continue;
+      const existing=(await chrome.tabs.query({url:'https://leetcode.com/contest/*'})).find(tab=>tab.url?.replace(/\/?$/,'')===url.href.replace(/\/?$/,''));
+      if(!existing)await chrome.tabs.create({url:url.href,active:true});
       contest.openedAt=new Date().toISOString();
-      await notify(`contest-${contest.id}-started`,`${contest.title} started`,'Open it from the extension timetable when convenient.');
+      await chrome.storage.local.set({leetcodeContests:contests});
+      await notify(`contest-${contest.id}-started`,`${contest.title} started`,'Contest page is open in Brave.');
     }
   }
   await chrome.storage.local.set({leetcodeContests:contests});
