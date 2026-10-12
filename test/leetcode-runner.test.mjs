@@ -287,13 +287,62 @@ test('provider block marks later questions skipped instead of pending',async()=>
 
 test('wrong answer is regenerated until LeetCode accepts it',async()=>{
   let submissions=0;
-  const {runner,runs,calls}=fixture({submit:async problem=>{
+  let drafts=0;
+  const feedbacks=[];
+  const {runner,runs,calls}=fixture({solve:async(_problem,feedback)=>{feedbacks.push(feedback);return {code:`class Solution: pass # revision ${++drafts}`,provider:'groq'};},submit:async problem=>{
     calls.submitted.push(problem.titleSlug);submissions++;
     return submissions===1?{accepted:false,feedback:'Wrong Answer'}:{accepted:true,submissionId:String(submissions),feedback:'Accepted'};
   }});
   runner.start({...config,dailyQuestionCount:1});await runner.done;
   assert.equal(runs[date].status,'completed');assert.equal(runs[date].tasks[0].attempts,2);
   assert.equal(runs[date].tasks[0].feedback,'Accepted');
+  assert.match(feedbacks[1],/Previously rejected code/);
+});
+
+test('only two judged submissions per question are allowed across hourly retries',async()=>{
+  let drafts=0;
+  const first=fixture({discover:async()=>({username:'Leetcoder071',questions:[{titleSlug:'daily-question',title:'Daily question',selection:'QOTD'}]}),
+    solve:async()=>({code:`revision ${++drafts}`,provider:'groq'}),
+    submit:async problem=>{first.calls.submitted.push(problem.titleSlug);return {accepted:false,feedback:'Wrong Answer'};}});
+  first.runner.start({...config,dailyQuestionCount:1},false,1,'Leetcoder071');await first.runner.done;
+  const failed=first.runs[`automatic:${date}:leetcoder071`];
+  assert.equal(first.calls.submitted.length,2);
+  assert.equal(failed.tasks[0].submissionAttempts,2);
+  assert.equal(failed.reviewRequired,true);
+  assert.equal(automaticRetryDecision(failed,config,new Date('2026-09-29T09:00:00Z')).due,false);
+  const archiveId='automatic-history:2026-09-29:old';
+  first.runs[archiveId]={...failed,id:archiveId};
+  delete first.runs[failed.id];
+  first.runner.start({...config,dailyQuestionCount:1},false,1,'Leetcoder071');await first.runner.done;
+  assert.equal(first.calls.submitted.length,2);
+});
+
+test('identical regenerated code is not submitted twice',async()=>{
+  const {runner,runs,calls}=fixture({submit:async problem=>{calls.submitted.push(problem.titleSlug);return {accepted:false,feedback:'Wrong Answer'};}});
+  runner.start({...config,dailyQuestionCount:1},false,1,'Leetcoder071');await runner.done;
+  assert.equal(calls.submitted.length,1);
+  const run=runs[`automatic:${date}:leetcoder071`];
+  assert.equal(run.reviewRequired,true);
+  assert.equal(run.tasks[0].submissionAttempts,1);
+});
+
+test('uncertain submission result pauses instead of resubmitting',async()=>{
+  const {runner,runs,calls}=fixture({submit:async problem=>{calls.submitted.push(problem.titleSlug);throw Error('LeetCode submission failed (429)');}});
+  runner.start({...config,dailyQuestionCount:1},false,1,'Leetcoder071');await runner.done;
+  assert.equal(calls.submitted.length,1);
+  const run=runs[`automatic:${date}:leetcoder071`];
+  assert.equal(run.status,'blocked');
+  assert.equal(run.reviewRequired,true);
+  assert.equal(automaticRetryDecision(run,config,new Date('2026-09-29T09:00:00Z')).due,false);
+});
+
+test('unavailable local check does not send unverified code to LeetCode',async()=>{
+  const {runner,runs,calls}=fixture({verify:async()=>{throw Error('checker offline');}});
+  runner.start({...config,dailyQuestionCount:1},false,1,'Leetcoder071');await runner.done;
+  assert.equal(calls.submitted.length,0);
+  const run=runs[`automatic:${date}:leetcoder071`];
+  assert.equal(run.status,'blocked');
+  assert.equal(run.reviewRequired,true);
 });
 
 test('session failure blocks submission and skips remaining questions',async()=>{

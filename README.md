@@ -21,7 +21,7 @@ Scheduled LeetCode practice drafts · Manual batches · Review-first workflow ·
 
 LeetCode AI Agent is a local AI practice assistant with a Brave/Chrome extension. Choose a time and a question count: it discovers untouched LeetCode problems, generates solutions with **Groq or Gemini**, checks syntax, submits them on the signed-in account, and records LeetCode's result.
 
-For daily practice sessions, the extension generates a solution, runs a local syntax check, submits it to LeetCode on the currently signed-in browser account, and retries rejected solutions up to the configured attempt limit. The installed extension is named **Practice Ex.** Live rated contests send reminders and can be opened from the timetable. AI solving and submissions pause while an official contest is live; the contest is for the participant to solve without external code generation, as required by [LeetCode's contest rules](https://leetcode.com/discuss/post/951105/new-contest-rule-effective-from-december-2020/).
+For daily practice sessions, the extension generates a solution, runs a local syntax check, and submits it to LeetCode on the currently signed-in browser account. It makes at most two judged submissions per question per day; rejected code is regenerated once, and duplicate drafts never reach LeetCode. The installed extension is named **Practice Ex.** Live rated contests send reminders and can be opened from the timetable. AI solving and submissions pause while an official contest is live; the contest is for the participant to solve without external code generation, as required by [LeetCode's contest rules](https://leetcode.com/discuss/post/951105/new-contest-rule-effective-from-december-2020/).
 
 > **Project status: experimental.** This is an unpacked extension, not a Chrome Web Store release. LeetCode session APIs and provider model availability can change. Syntax checks do not prove solution correctness. Live API generation depends on your account access, quota, and provider uptime.
 
@@ -137,7 +137,7 @@ Open **Settings & keys**, enter the provider key and model ID, then select **Sav
 - If an automatic run fails, fix the provider or login issue and click **Retry today’s drafts**. Earlier failed attempts remain in history.
 - In Auto Mode, failed or interrupted daily work retries at the next hourly slot until the day's target is accepted. Accepted questions carry forward; the same run is never submitted twice concurrently. Completion cancels the remaining retry wake events after the wake helper refreshes.
 - The extension submits each syntax-checked solution to the account currently signed in to LeetCode.
-- A rejected solution is regenerated with judge feedback until accepted or the attempt limit is reached.
+- A rejected solution is regenerated with judge feedback once. After two judged submissions for the same question on the same day, automatic retries pause and the run asks for review. Repeated identical drafts are never resubmitted.
 - Daily result notifications show the accepted count and first failed question. Clicking one opens that exact run in Solution history. Groq and Gemini cards show the last known connection result and which provider handled the latest solution.
 
 A successful connection test checks a small request. It does not guarantee a larger solution request will succeed.
@@ -210,7 +210,7 @@ A same-day stopped/failed automatic run can be archived and retried when moved t
 | Manual count | 1–100 drafts; actual availability depends on untouched eligible questions |
 | Difficulties | Any combination of Easy, Medium, Hard |
 | Daily QOTD | Required in automatic LeetCode practice, even if previously attempted; a QOTD accepted earlier today is credited instead of submitted twice |
-| Max attempts | 1–8 per question |
+| Max AI drafts | 1–8 per question; judged submissions are capped at 2 per question per day |
 | Provider order | Groq → Gemini or Gemini → Groq |
 | Token budget | 1,000–1,000,000 estimated/reported tokens per day |
 | Language | Python or JavaScript |
@@ -244,7 +244,7 @@ Current limitation: local syntax checks do not run examples or hidden tests. A `
 npm test
 ```
 
-The current suite includes **45 tests**, covering schedule handling, history, provider fallback, LeetCode submission retries, account isolation, key encryption, budgets, HTTP authorization, stop behavior, settings persistence, and local syntax parsing. Automated tests do not make paid provider calls.
+The automated suite covers schedule handling, history, provider fallback, LeetCode submission limits, account isolation, key encryption, budgets, HTTP authorization, stop behavior, settings persistence, and local syntax parsing. Automated tests do not make paid provider calls.
 
 ```text
 leetcode-ai-agent/

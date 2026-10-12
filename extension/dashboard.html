@@ -179,7 +179,7 @@
 <option value="javascript">JavaScript</option>
 </select>
 </label>
-<label>Max attempts<input name="maxAttempts" type="number" min="1" max="8" required>
+<label>Max AI drafts per question<input name="maxAttempts" type="number" min="1" max="8" required>
 </label>
 <label>Daily token budget<input name="dailyTokenBudget" type="number" min="1000" max="1000000" required>
 </label>
@@ -207,7 +207,7 @@
 <input name="Hard" type="checkbox"> Hard</label>
 </div>
 <button class="primary">Save settings</button>
-<p class="muted">Question count applies to automatic sessions. Manual Prepare uses the custom count on the Today page (1–100). Solutions are submitted on the currently signed-in LeetCode account.</p>
+<p class="muted">Question count applies to automatic sessions. Manual Prepare uses the custom count on the Today page (1–100). Solutions are submitted on the currently signed-in LeetCode account. To protect accuracy, each question gets at most two judged submissions per day; repeated code and uncertain submissions pause for review.</p>
 </form>
 <div class="card">
 <h2>Run while this Mac is sleeping</h2>

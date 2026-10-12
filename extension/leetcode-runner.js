@@ -1,5 +1,12 @@
 const TERMINAL = new Set(['completed', 'prepared', 'failed', 'blocked', 'stopped', 'interrupted']);
 const ACTIVE = new Set(['discovering', 'running', 'stopping']);
+const DAILY_SUBMISSION_LIMIT = 2;
+const codeFingerprint = code => {
+  const normalized=String(code||'').trim().replace(/\r\n/g,'\n');
+  let hash=2166136261;
+  for(let i=0;i<normalized.length;i++)hash=Math.imul(hash^normalized.charCodeAt(i),16777619);
+  return `${normalized.length}:${hash>>>0}`;
+};
 export const hasAcceptedQotd = run => (run?.tasks||[]).some(t=>t.problem?.selection==='QOTD'&&t.status==='accepted');
 export const automaticRunKey = (date, username) => username ? `automatic:${date}:${username.toLowerCase()}` : date;
 export function dailyRunForAccount(runs, date, username) {
@@ -37,6 +44,7 @@ export function automaticRetryDecision(run, config, now = new Date()) {
   if (!config.autoMode || !config.leetcode?.enabled) return {due:false, reason:'Auto Mode is off'};
   if (clock.time < config.dailyStartTime) return {due:false, reason:`Scheduled for ${config.dailyStartTime}`};
   if (!run) return {due:true, reason:'Scheduled time passed; starting now'};
+  if (run.reviewRequired) return {due:false, reason:'Submission safety limit reached; review this question before trying again'};
   if (run.status === 'completed' || ((run.tasks || []).filter(t=>t.status==='accepted').length >= config.dailyQuestionCount&&hasAcceptedQotd(run))) return {due:false, reason:'Daily target completed'};
   if (ACTIVE.has(run.status)) return {due:false, reason:'Daily run is in progress'};
   if (run.status === 'stopped') return {due:false, reason:'Stopped manually; use Retry today to resume'};
@@ -121,6 +129,8 @@ export class LeetCodeRunner {
       await this.io.save(run);
       if (active.stop) return await this.finishStopped(run);
       const accountRuns = Object.values(runs).filter(r => !accountUsername || r.username?.toLowerCase() === accountUsername.toLowerCase());
+      const priorTasksFor = slug => accountRuns.filter(r=>r.date===clock.date).flatMap(r=>r.tasks||[])
+        .filter(t=>t.problem?.titleSlug===slug);
       const excludeSlugs = new Set(accountRuns.flatMap(r =>
         (r.tasks || []).map(t => t.problem?.titleSlug)).filter(Boolean));
       const acceptedTodaySlugs = new Set(accountRuns.filter(r=>r.date===clock.date).flatMap(r=>
@@ -167,8 +177,18 @@ export class LeetCodeRunner {
       run.status = 'running';
       await this.io.save(run);
       for (const task of run.tasks) {
+        const priorTasks=priorTasksFor(task.problem.titleSlug);
+        const priorSubmissions=priorTasks.reduce((total,t)=>total+Math.max(0,Number(t.submissionAttempts??t.attempts)||0),0);
+        const submittedCodes=new Set(priorTasks.flatMap(t=>[
+          ...(t.submittedCodeFingerprints||[]),...(t.solution?.code?[codeFingerprint(t.solution.code)]:[])]));
+        task.submissionAttempts ||= 0;
+        task.submittedCodeFingerprints ||= [];
         while (task.status !== 'accepted' && task.attempts < config.maxAttempts) {
           if (active.stop) return await this.finishStopped(run);
+          if(priorSubmissions+task.submissionAttempts>=DAILY_SUBMISSION_LIMIT){
+            task.status='failed';task.feedback=`Submission safety limit (${DAILY_SUBMISSION_LIMIT} per question per day) reached. Review the solution before another submission.`;
+            run.reviewRequired=true;break;
+          }
           if (accountUsername && this.io.session && (await this.io.session()).toLowerCase() !== accountUsername.toLowerCase()) throw Error('LeetCode account changed during this run. Retry with the account currently signed in.');
           task.attempts++;
           task.status = 'drafting';
@@ -176,7 +196,9 @@ export class LeetCodeRunner {
           if (active.stop) return await this.finishStopped(run);
           let solution;
           try {
-            solution = await this.io.solve(task.problem, task.feedback, active.controller.signal);
+            const rejectedCode=task.submittedCodeFingerprints.length?task.solution?.code:'';
+            const feedback=rejectedCode?`${task.feedback}\nPreviously rejected code (do not repeat):\n${rejectedCode.slice(0,3000)}`:task.feedback;
+            solution = await this.io.solve(task.problem, feedback, active.controller.signal);
             if (active.stop) return await this.finishStopped(run);
             task.provider = solution.provider;
             task.solution = {code: solution.code, explanation: solution.explanation, complexity: solution.complexity};
@@ -194,9 +216,26 @@ export class LeetCodeRunner {
           try {
             task.verification=await this.io.verify(task.problem,solution.code,active.controller.signal);
             if(!task.verification.ok){task.feedback=task.verification.feedback;task.status='pending';await this.io.save(run);continue;}
-          }catch(error){if(active.stop)return await this.finishStopped(run);task.verification={ok:false,feedback:`Local syntax check unavailable: ${error.message}`};}
+          }catch(error){
+            if(active.stop)return await this.finishStopped(run);
+            task.verification={ok:false,feedback:`Local syntax check unavailable: ${error.message}`};
+            task.feedback=task.verification.feedback;task.status='blocked';run.reviewRequired=true;
+            await this.io.save(run);break;
+          }
           if(active.stop)return await this.finishStopped(run);
+          const fingerprint=codeFingerprint(solution.code);
+          if(submittedCodes.has(fingerprint)){
+            task.feedback=`Generated code repeats an earlier submission. ${task.feedback||'Use a different approach.'}`;
+            task.repeatedDrafts=(task.repeatedDrafts||0)+1;
+            task.status='pending';await this.io.save(run);
+            if(task.repeatedDrafts>=2){task.status='failed';run.reviewRequired=true;break;}
+            continue;
+          }
           task.status='submitting';await this.io.save(run);
+          task.submissionAttempts++;
+          task.submittedCodeFingerprints.push(fingerprint);
+          submittedCodes.add(fingerprint);
+          await this.io.save(run);
           try{
             const judged=await this.io.submit(task.problem,solution.code,run.username,active.controller.signal);
             task.feedback=judged.feedback||'';
@@ -204,9 +243,9 @@ export class LeetCodeRunner {
             task.status='pending';await this.io.save(run);
           }catch(error){
             if(active.stop)return await this.finishStopped(run);
-            task.feedback=error.message;task.status='pending';
-            if(/login|session|csrf|account|401|403|contest.*is live/i.test(error.message)){task.status='blocked';break;}
+            task.feedback=`Submission result uncertain: ${error.message}`;task.status='blocked';run.reviewRequired=true;
             await this.io.save(run);
+            break;
           }
         }
         if (task.status !== 'accepted' && task.status !== 'blocked') task.status = 'failed';
@@ -217,7 +256,7 @@ export class LeetCodeRunner {
       run.status = readyCount === run.target && (manual||hasAcceptedQotd(run)) ? 'completed' : run.tasks.some(t => t.status === 'blocked') ? 'blocked' : 'failed';
       if (run.status === 'blocked') for (const task of run.tasks) if (task.status === 'pending') {task.status='skipped';task.feedback='Earlier question was blocked; retry after fixing the provider.';}
       run.finishedAt = this.io.now().toISOString();
-      if (!manual && run.status !== 'completed') run.nextRetryAt = nextHourlyRetryAt(config,this.io.now());
+      if (!manual && run.status !== 'completed'&&!run.reviewRequired) run.nextRetryAt = nextHourlyRetryAt(config,this.io.now());
       await this.io.save(run);
       await this.notifySummary(run);
       return run;
@@ -241,7 +280,7 @@ export class LeetCodeRunner {
     const failed=run.tasks.find(t=>['blocked','failed','skipped'].includes(t.status));
     const reason=failed?.feedback||run.feedback||'';
     const detail=failed?.problem?.title ? `${failed.problem.title}: ${reason}` : reason;
-    const retry=run.mode==='automatic'&&run.status!=='completed'?' Hourly retry is scheduled.':'';
+    const retry=run.reviewRequired?' Automatic retries are paused pending review.':run.mode==='automatic'&&run.status!=='completed'?' Hourly retry is scheduled.':'';
     await this.io.notify(`leetcode-run:${run.id}`,`${accepted}/${run.target} accepted · ${run.mode==='manual'?'Manual':'Daily'}`,
       `${run.username||'LeetCode'} · ${run.status}.${detail?' '+detail.slice(0,220):''}${retry}`);
   }
