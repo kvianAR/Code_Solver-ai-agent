@@ -223,6 +223,20 @@ export class LeetCodeRunner {
             await this.io.save(run);break;
           }
           if(active.stop)return await this.finishStopped(run);
+          try{
+            task.preflightRuns=(task.preflightRuns||0)+1;
+            const checked=await this.io.preflight(task.problem,solution.code,run.username,active.controller.signal);
+            if(active.stop)return await this.finishStopped(run);
+            if(!checked?.ok){
+              task.preflightFailures=(task.preflightFailures||0)+1;
+              task.feedback=`Run Code failed: ${checked?.feedback||'LeetCode examples did not pass'}`;
+              task.status='pending';await this.io.save(run);continue;
+            }
+          }catch(error){
+            if(active.stop)return await this.finishStopped(run);
+            task.feedback=`Pre-submit check unavailable: ${error.message}`;task.status='blocked';run.reviewRequired=true;
+            await this.io.save(run);break;
+          }
           const fingerprint=codeFingerprint(solution.code);
           if(submittedCodes.has(fingerprint)){
             task.feedback=`Generated code repeats an earlier submission. ${task.feedback||'Use a different approach.'}`;
@@ -235,9 +249,13 @@ export class LeetCodeRunner {
           task.submissionAttempts++;
           task.submittedCodeFingerprints.push(fingerprint);
           submittedCodes.add(fingerprint);
+          task.submissionHistory ||= [];
+          const submissionRecord={at:this.io.now().toISOString(),provider:task.provider||'unknown',fingerprint,status:'unknown'};
+          task.submissionHistory.push(submissionRecord);
           await this.io.save(run);
           try{
             const judged=await this.io.submit(task.problem,solution.code,run.username,active.controller.signal);
+            submissionRecord.status=judged.accepted?'accepted':'rejected';submissionRecord.submissionId=judged.submissionId||'';
             task.feedback=judged.feedback||'';
             if(judged.accepted){task.status='accepted';task.submissionId=judged.submissionId||'';task.completedAt=this.io.now().toISOString();await this.io.save(run);continue;}
             task.status='pending';await this.io.save(run);

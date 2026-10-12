@@ -1,6 +1,6 @@
 const $=s=>document.querySelector(s);
 const extension=typeof chrome!=='undefined'&&!!chrome.runtime?.id;
-const UI_BUILD='2.8.4';
+const UI_BUILD='2.8.11';
 if(extension)chrome.storage.local.get('uiBuild').then(({uiBuild})=>{if(uiBuild!==UI_BUILD)chrome.storage.local.set({uiBuild:UI_BUILD}).then(()=>chrome.runtime.reload());});
 let connection=null,state=null,catalog=[],page='today',busy=false,leetcodeRuns={},leetcodeContests=[],contestCalendarUpdatedAt=0,contestCalendarError='',liveRun=null,leetcodeAccount='',activeRunId=null,stopping=false,dailyDiagnostic=null;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -35,9 +35,12 @@ function render(){
   const nextTargetChanged=job?.status==='completed'&&job.target!==c.dailyQuestionCount;
   $('#today-date').textContent=dateOnly(state.today).toUpperCase();$('#daily-count').textContent=`${job?.tasks.filter(t=>['ready','accepted'].includes(t.status)).length||0} / ${job?.target||c.dailyQuestionCount}`;$('#daily-status').textContent=job?.status||'Scheduled';$('#next-daily-target').hidden=!nextTargetChanged;$('#next-daily-target').textContent=nextTargetChanged?`Tomorrow's automatic target: ${c.dailyQuestionCount} questions`:'';$('#streak').innerHTML=`${c.leetcode?.enabled?liveStreak():streak()} <em>days</em>`;
   $('#start-time').textContent=c.dailyStartTime;$('#timezone-label').textContent=c.timezone;$('#token-count').textContent=(usage?.tokens||0).toLocaleString();$('#token-budget').textContent=`${c.dailyTokenBudget.toLocaleString()} daily budget · ${usage?.calls||0} calls`;$('#auto-label').textContent=c.autoMode?'Auto Mode ON':'Auto Mode paused';$('#run-now').textContent=c.leetcode?.enabled?`▶ Prepare ${getManualCount()} now`:"▶ Run today's session";$('#run-now').disabled=c.leetcode?.enabled?(!extension||!!activeRunId):(!c.autoMode||job?.status==='running');$('#stop-solving').hidden=!c.leetcode?.enabled;$('#stop-solving').disabled=!activeRunId||stopping;$('#stop-solving').textContent=stopping?'Stopping…':'■ Stop';
+  const metrics=practiceMetrics(leetcodeRuns,leetcodeAccount);
+  $('#accuracy-summary').textContent=`First-submit accepted: ${metrics.firstAccepted}/${metrics.firstTotal}${metrics.firstTotal?` (${Math.round(100*metrics.firstAccepted/metrics.firstTotal)}%)`:''} · Run Code failures before submit: ${metrics.preflightFailures}/${metrics.preflightRuns}.`;
+  $('#provider-outcomes').textContent=Object.entries(metrics.providers).map(([name,result])=>`${name}: ${result.accepted} accepted, ${result.rejected} rejected`).join(' · ')||'Provider outcomes appear after a judged submission. Earlier sessions may not include these metrics.';
   const active=Object.values(leetcodeRuns).find(r=>(r.id||r.date)===activeRunId);
   $('#live-session-status').textContent=stopping?'Stopping draft preparation':activeRunId?`${active?.mode==='manual'?'Manual':'Automatic'} draft preparation running`:leetcodeAccount?`Ready for ${leetcodeAccount}`:'Sign in to LeetCode in this Brave profile';
-  $('#live-session-help').textContent=c.leetcode?.enabled&&!extension?'Open the Practice Ex. extension in Brave to run account submissions.':`Automatic: ${c.dailyStartTime} every day. Solutions are generated, syntax-checked, submitted to LeetCode, and retried until accepted or the attempt limit is reached.`;
+  $('#live-session-help').textContent=c.leetcode?.enabled&&!extension?'Open the Practice Ex. extension in Brave to run account submissions.':`Automatic: ${c.dailyStartTime} every day. Drafts pass syntax and LeetCode example tests before a judged submission.`;
   $('#daily-diagnosis').textContent=(extension&&c.leetcode?.enabled?(dailyDiagnostic?.message||'Waiting for the next scheduler check.'):'Browser schedule diagnostics appear in the extension dashboard.')+(nextTargetChanged?` Tomorrow's goal: ${c.dailyQuestionCount} questions.`:'');
   $('#next-retry').textContent=dailyDiagnostic?.nextRetryAt?`Next retry: ${esc(formatDate(dailyDiagnostic.nextRetryAt,{hour:'2-digit',minute:'2-digit'}))} · ${c.timezone}`:'';
   $('#retry-daily').hidden=!extension||!c.leetcode?.enabled||!leetcodeAccount||!['blocked','failed','stopped','interrupted'].includes(liveRun?.status);

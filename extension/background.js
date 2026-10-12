@@ -102,6 +102,12 @@ const runner=new LeetCodeRunner({
     if(!connection)throw Error('Connect the extension to the agent first');
     return serverApi(connection,'leetcode/verify',{code},signal);
   },
+  preflight:async(problem,code,username,signal)=>{
+    await requirePracticeWindow();
+    const response=await leetcodeMessage({type:'leetcode-preflight',problem,code,username},()=>signal?.aborted,true);
+    if(!response?.ok)throw Error(response?.error||'LeetCode Run Code failed');
+    return response.value;
+  },
   submit:async(problem,code,username,signal)=>{
     await requirePracticeWindow();
     const response=await leetcodeMessage({type:'leetcode-submit',problem,code,username},()=>signal?.aborted,true);

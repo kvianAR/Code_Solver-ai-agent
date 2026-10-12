@@ -8,7 +8,7 @@ const config = {timezone:'Asia/Kolkata', dailyStartTime:'10:00', autoMode:true,
 const date = '2026-09-29';
 const defer = () => {let resolve; const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 function fixture(overrides={}, initial={}) {
-  const runs=structuredClone(initial), calls={discovered:[],verified:[],submitted:[],opened:[],solved:0,notices:[]};
+  const runs=structuredClone(initial), calls={discovered:[],verified:[],preflighted:[],submitted:[],opened:[],solved:0,notices:[]};
   let nextId=0;
   const io={
     now:()=>new Date('2026-09-29T06:00:00Z'), uuid:()=>String(++nextId),
@@ -17,12 +17,40 @@ function fixture(overrides={}, initial={}) {
     discover:async options=>{calls.discovered.push(options);return {username:'Leetcoder071',questions:Array.from({length:options.count},(_,i)=>({titleSlug:`question-${calls.discovered.length}-${i}`,title:`Question ${i}`,...(i===0&&options.requireQotd?{selection:'QOTD'}:{selection:'RANDOM'})}))};},
     solve:async()=>{calls.solved++;return {code:'class Solution: pass',provider:'groq'};},
     verify:async(problem)=>{calls.verified.push(problem.titleSlug);return {ok:true,feedback:'Syntax check passed'};},
+    preflight:async(problem)=>{calls.preflighted.push(problem.titleSlug);return {ok:true,feedback:'LeetCode examples passed'};},
     submit:async problem=>{calls.submitted.push(problem.titleSlug);return {accepted:true,submissionId:`submission-${calls.submitted.length}`,feedback:'Accepted'};},
     open:async problem=>{calls.opened.push(problem.titleSlug);},
     notify:async(...args)=>calls.notices.push(args), ...overrides
   };
   return {runner:new LeetCodeRunner(io),runs,calls};
 }
+
+test('failed Run Code examples regenerate locally before the first judged submission',async()=>{
+  let draft=0;
+  const {runner,runs,calls}=fixture({
+    solve:async()=>({code:`class Solution: pass # ${++draft}`,provider:'groq'}),
+    preflight:async()=>({ok:draft>1,feedback:'Wrong Answer on sample'})
+  });
+  runner.start(config,true,1);await runner.done;
+  const task=Object.values(runs)[0].tasks[0];
+  assert.equal(task.status,'accepted');
+  assert.equal(task.preflightRuns,2);
+  assert.equal(task.preflightFailures,1);
+  assert.equal(task.submissionAttempts,1);
+  assert.equal(calls.submitted.length,1);
+  assert.equal(task.submissionHistory[0].status,'accepted');
+});
+
+test('unavailable Run Code blocks judged submission and records the reason',async()=>{
+  const {runner,runs,calls}=fixture({preflight:async()=>{throw Error('Run Code unavailable (403)');}});
+  runner.start(config,false,2,'Leetcoder071');await runner.done;
+  const run=Object.values(runs)[0];
+  assert.equal(run.status,'blocked');
+  assert.equal(run.reviewRequired,true);
+  assert.match(run.tasks[0].feedback,/Run Code unavailable/);
+  assert.equal(calls.submitted.length,0);
+  assert.equal(run.tasks[0].problem.selection,'QOTD');
+});
 
 test('manual sessions add two questions after daily completion and retain daily result',async()=>{
   const daily={id:date,date,mode:'automatic',status:'completed',target:2,tasks:[{status:'accepted',problem:{titleSlug:'old-a'}},{status:'accepted',problem:{titleSlug:'old-b'}}]};

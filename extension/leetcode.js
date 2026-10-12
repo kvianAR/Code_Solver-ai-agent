@@ -19,12 +19,12 @@
       }
     }
   }
-  const QUESTION_QUERY=`query questionData($titleSlug: String!) { question(titleSlug: $titleSlug) { questionId questionFrontendId title titleSlug content difficulty isPaidOnly status codeSnippets { lang langSlug code } topicTags { name slug } } }`;
+  const QUESTION_QUERY=`query questionData($titleSlug: String!) { question(titleSlug: $titleSlug) { questionId questionFrontendId title titleSlug content difficulty isPaidOnly status exampleTestcases codeSnippets { lang langSlug code } topicTags { name slug } } }`;
   const DAILY_QUERY=`query questionOfToday { activeDailyCodingChallengeQuestion { date link question { title titleSlug difficulty isPaidOnly } } }`;
   const LIST_QUERY=`query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $filters: QuestionListFilterInput) { problemsetQuestionList: questionList(categorySlug: $categorySlug, limit: $limit, skip: $skip, filters: $filters) { total: totalNum questions: data { titleSlug difficulty paidOnly: isPaidOnly status } } }`;
   const USER_QUERY=`query globalData { userStatus { isSignedIn username } }`;
   function plainText(html){const doc=new DOMParser().parseFromString(String(html||''),'text/html');doc.querySelectorAll('script,style').forEach(n=>n.remove());return(doc.body.textContent||'').replace(/\n\s*\n\s*\n+/g,'\n\n').trim();}
-  async function question(slug,language){const q=(await graphql(QUESTION_QUERY,{titleSlug:slug})).question;if(!q)return null;const langSlug=language==='javascript'?'javascript':'python3',snippet=q.codeSnippets?.find(x=>x.langSlug===langSlug)||q.codeSnippets?.[0];return{id:q.questionId,frontendId:q.questionFrontendId,title:q.title,titleSlug:q.titleSlug,difficulty:q.difficulty,paidOnly:!!q.isPaidOnly,status:q.status||null,statement:plainText(q.content),starterCode:snippet?.code||'',langSlug:snippet?.langSlug||langSlug,topics:(q.topicTags||[]).map(x=>x.name)};}
+  async function question(slug,language){const q=(await graphql(QUESTION_QUERY,{titleSlug:slug})).question;if(!q)return null;const langSlug=language==='javascript'?'javascript':'python3',snippet=q.codeSnippets?.find(x=>x.langSlug===langSlug)||q.codeSnippets?.[0];return{id:q.questionId,frontendId:q.questionFrontendId,title:q.title,titleSlug:q.titleSlug,difficulty:q.difficulty,paidOnly:!!q.isPaidOnly,status:q.status||null,statement:plainText(q.content),starterCode:snippet?.code||'',langSlug:snippet?.langSlug||langSlug,exampleTestcases:q.exampleTestcases||'',topics:(q.topicTags||[]).map(x=>x.name)};}
   function shuffle(values){const result=[...values];for(let i=result.length-1;i>0;i--){const bytes=new Uint32Array(1);crypto.getRandomValues(bytes);const j=bytes[0]%(i+1);[result[i],result[j]]=[result[j],result[i]];}return result;}
   async function problemsetSlugs(allowed,seen,wanted){
     const candidates=[];
@@ -78,6 +78,35 @@
     if(!chosen.length)throw Error('No untouched eligible LeetCode question found');return{username:user.username,questions:chosen,qotdNote};
   }
   const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  async function preflight(problem,code,expectedUsername){
+    const user=(await graphql(USER_QUERY)).userStatus;
+    if(!user?.isSignedIn)throw Error('Brave me LeetCode login required');
+    if(expectedUsername&&user.username.toLowerCase()!==expectedUsername.toLowerCase())throw Error(`LeetCode account changed during Run Code: ${user.username}`);
+    if(!problem.exampleTestcases?.trim())throw Error('LeetCode examples unavailable; no judged submission was sent');
+    const csrf=document.cookie.split('; ').find(value=>value.startsWith('csrftoken='))?.split('=').slice(1).join('=');
+    if(!csrf)throw Error('LeetCode session token unavailable. Reload the LeetCode tab and sign in again.');
+    const response=await fetch(`/problems/${encodeURIComponent(problem.titleSlug)}/interpret_solution/`,{
+      method:'POST',credentials:'include',headers:{'content-type':'application/json','x-csrftoken':decodeURIComponent(csrf),'x-requested-with':'XMLHttpRequest'},
+      body:JSON.stringify({lang:problem.langSlug||'python3',question_id:String(problem.id),typed_code:code,data_input:problem.exampleTestcases})
+    });
+    if(!response.ok)throw Error(`LeetCode Run Code unavailable (${response.status}); no judged submission was sent`);
+    const result=await response.json(),runId=result.interpret_id||result.interpretId;
+    if(!runId)throw Error('LeetCode Run Code did not return a run id; no judged submission was sent');
+    for(let attempt=0;attempt<45;attempt++){
+      await wait(1000);
+      const check=await fetch(`/submissions/detail/${runId}/check/`,{credentials:'include',headers:{'x-requested-with':'XMLHttpRequest'}});
+      if(!check.ok)throw Error(`LeetCode Run Code result unavailable (${check.status}); no judged submission was sent`);
+      const judged=await check.json();
+      if(judged.state!=='SUCCESS')continue;
+      const expected=judged.expected_code_answer,actual=judged.code_answer;
+      const comparable=Array.isArray(expected)&&Array.isArray(actual)&&expected.length>0&&expected.length===actual.length;
+      const matched=comparable&&expected.every((value,index)=>String(value).trim()===String(actual[index]).trim());
+      const ok=judged.run_success===true&&(judged.correct_answer===true||judged.correct_answer==null&&matched);
+      const feedback=[judged.status_msg,judged.compile_error,judged.runtime_error,judged.last_testcase&&`Testcase: ${judged.last_testcase}`,expected&&`Expected: ${JSON.stringify(expected)}`,actual&&`Output: ${JSON.stringify(actual)}`].filter(Boolean).join(' ');
+      return{ok,feedback:ok?'LeetCode examples passed':feedback||'LeetCode examples did not pass'};
+    }
+    throw Error('LeetCode Run Code timed out; no judged submission was sent');
+  }
   async function submit(problem,code,expectedUsername){
     const user=(await graphql(USER_QUERY)).userStatus;
     if(!user?.isSignedIn)throw Error('Brave me LeetCode login required');
@@ -103,5 +132,5 @@
     }
     throw Error('LeetCode result timed out');
   }
-  chrome.runtime.onMessage.addListener((message,_sender,sendResponse)=>{if(!['leetcode-discover','leetcode-session','leetcode-submit'].includes(message?.type))return;(async()=>{if(message.type==='leetcode-discover')return discover(message.options||{});if(message.type==='leetcode-submit')return submit(message.problem,message.code,message.username);const user=(await graphql(USER_QUERY)).userStatus;return{signedIn:!!user?.isSignedIn,username:user?.username||''};})().then(value=>sendResponse({ok:true,value})).catch(error=>sendResponse({ok:false,error:error.message}));return true;});
+  chrome.runtime.onMessage.addListener((message,_sender,sendResponse)=>{if(!['leetcode-discover','leetcode-session','leetcode-submit','leetcode-preflight'].includes(message?.type))return;(async()=>{if(message.type==='leetcode-discover')return discover(message.options||{});if(message.type==='leetcode-submit')return submit(message.problem,message.code,message.username);if(message.type==='leetcode-preflight')return preflight(message.problem,message.code,message.username);const user=(await graphql(USER_QUERY)).userStatus;return{signedIn:!!user?.isSignedIn,username:user?.username||''};})().then(value=>sendResponse({ok:true,value})).catch(error=>sendResponse({ok:false,error:error.message}));return true;});
 })();
