@@ -6,7 +6,7 @@ import {runInNewContext} from 'node:vm';
 const source=readFileSync(new URL('../extension/background.js',import.meta.url),'utf8')
   .replace(/^import .*?;\n/gm,'');
 
-async function runPoll(due){
+async function runPoll(due,precheck=false){
   const tabs=[],created=[],removed=[],saved={connection:{url:'http://127.0.0.1:8787',token:'test'},
     leetcodeRuns:{},leetcodeAccount:'TestUser',contestCalendarVersion:2,
     contestCalendarUpdatedAt:Date.now(),leetcodeContests:[]};
@@ -38,7 +38,7 @@ async function runPoll(due){
   }
   runInNewContext(source,{chrome,LeetCodeRunner:Runner,activeContest:()=>null,contestRefreshDue:()=>false,
     localClock:()=>({date:'2026-10-06',time:'12:00'}),dailyRunForAccount:()=>null,
-    latestArchivedAutomaticRun:()=>null,automaticRetryDecision:()=>({due}),
+    latestArchivedAutomaticRun:()=>null,automaticRetryDecision:()=>({due}),loginPrecheckDue:()=>precheck,
     archiveRetryableAutomaticRun:()=>false,shouldRetryForLaterSchedule:()=>false,
     fetch:async()=>({ok:true,json:async()=>state}),Date,crypto:{randomUUID:()=>''},
     setInterval(){},setTimeout,clearTimeout,AbortSignal,URL});
@@ -55,4 +55,11 @@ test('idle scheduler does not open LeetCode; a due run closes its temporary tab'
   assert.equal(due.created.length,1);
   assert.deepEqual(due.removed,[7]);
   assert.equal(due.tabs.length,0);
+});
+
+test('early login check closes its temporary tab before the scheduled run',async()=>{
+  const checked=await runPoll(false,true);
+  assert.equal(checked.created.length,1);
+  assert.deepEqual(checked.removed,[7]);
+  assert.equal(checked.tabs.length,0);
 });

@@ -1,12 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {LeetCodeRunner, archiveRetryableAutomaticRun, automaticRetryDecision, latestArchivedAutomaticRun, nextHourlyRetryAt, shouldRetryForLaterSchedule} from '../extension/leetcode-runner.js';
+import {LeetCodeRunner, archiveRetryableAutomaticRun, automaticRetryDecision, latestArchivedAutomaticRun, loginPrecheckDue, nextHourlyRetryAt, shouldRetryForLaterSchedule} from '../extension/leetcode-runner.js';
 
 const config = {timezone:'Asia/Kolkata', dailyStartTime:'10:00', autoMode:true,
   dailyQuestionCount:2, maxAttempts:8, language:'python', allowedDifficulties:['Easy'],
   preferQuestionOfTheDay:true, leetcode:{enabled:true,username:'Leetcoder071'}};
 const date = '2026-09-29';
 const defer = () => {let resolve; const promise=new Promise(r=>resolve=r);return {promise,resolve};};
+test('login is checked once before daily start and again when the run becomes due',()=>{
+  const now=new Date('2026-10-20T04:25:00Z'); // 09:55 IST
+  assert.equal(loginPrecheckDue(config,now),true);
+  assert.equal(loginPrecheckDue(config,now,new Date('2026-10-20T04:22:00Z').getTime()),false);
+  assert.equal(loginPrecheckDue(config,new Date('2026-10-20T04:30:00Z')),false);
+  assert.equal(loginPrecheckDue({...config,autoMode:false},now),false);
+});
 function fixture(overrides={}, initial={}) {
   const runs=structuredClone(initial), calls={discovered:[],verified:[],preflighted:[],submitted:[],opened:[],solved:0,notices:[]};
   let nextId=0;
@@ -50,6 +57,28 @@ test('unavailable Run Code blocks judged submission and records the reason',asyn
   assert.match(run.tasks[0].feedback,/Run Code unavailable/);
   assert.equal(calls.submitted.length,0);
   assert.equal(run.tasks[0].problem.selection,'QOTD');
+});
+
+test('Run Code 429 schedules an hourly retry without wasting a judged submission or starting the random question',async()=>{
+  const {runner,runs,calls}=fixture({preflight:async()=>{throw Error('LeetCode Run Code unavailable (429)');}});
+  runner.start(config,false,2,'Leetcoder071');await runner.done;
+  const run=runs[`automatic:${date}:leetcoder071`];
+  assert.equal(run.status,'blocked');
+  assert.equal(run.reviewRequired,undefined);
+  assert.equal(run.tasks[0].problem.selection,'QOTD');
+  assert.equal(run.tasks[1].status,'skipped');
+  assert.equal(calls.submitted.length,0);
+  assert.equal(automaticRetryDecision(run,config,new Date('2026-09-29T09:00:00Z')).due,true);
+});
+
+test('a failed QOTD prevents other automatic submissions',async()=>{
+  const {runner,runs,calls}=fixture({preflight:async()=>({ok:false,feedback:'Wrong Answer'})});
+  runner.start(config,false,2,'Leetcoder071');await runner.done;
+  const run=runs[`automatic:${date}:leetcoder071`];
+  assert.equal(run.status,'failed');
+  assert.equal(run.tasks[0].attempts,8);
+  assert.equal(run.tasks[1].status,'skipped');
+  assert.equal(calls.submitted.length,0);
 });
 
 test('manual sessions add two questions after daily completion and retain daily result',async()=>{
@@ -272,9 +301,20 @@ test('Stop during discovery prevents generation; a later manual click works',asy
 test('temporary failures stop at eight attempts and are not retried by the minute alarm',async()=>{
   let attempts=0;const {runner,runs}=fixture({solve:async()=>{attempts++;throw Error('Temporary provider failure');}});
   runner.start(config);await runner.done;
-  assert.equal(attempts,16);assert.equal(runs[date].status,'failed');
-  assert.ok(runs[date].tasks.every(t=>t.attempts===8));
-  runner.start(config);await runner.done;assert.equal(attempts,16);
+  assert.equal(attempts,8);assert.equal(runs[date].status,'failed');
+  assert.equal(runs[date].tasks[0].attempts,8);
+  assert.equal(runs[date].tasks[1].status,'skipped');
+  runner.start(config);await runner.done;assert.equal(attempts,8);
+});
+
+test('a revised draft requests a different provider when one is available',async()=>{
+  const avoided=[];let draft=0;
+  const {runner}=fixture({
+    solve:async(_problem,_feedback,_signal,avoidProvider)=>{avoided.push(avoidProvider);return{code:`draft ${++draft}`,provider:avoidProvider?'gemini':'groq'};},
+    preflight:async()=>({ok:draft>1,feedback:'Wrong Answer'})
+  });
+  runner.start(config,true,1);await runner.done;
+  assert.deepEqual(avoided,['','groq']);
 });
 
 test('worker recovery preserves completed results and marks unfinished work interrupted',async()=>{
@@ -343,6 +383,21 @@ test('only two judged submissions per question are allowed across hourly retries
   delete first.runs[failed.id];
   first.runner.start({...config,dailyQuestionCount:1},false,1,'Leetcoder071');await first.runner.done;
   assert.equal(first.calls.submitted.length,2);
+});
+
+test('archived copies of one judged submission do not consume two daily slots',async()=>{
+  const oldTask={problem:{titleSlug:'daily-question',title:'Daily question',selection:'QOTD'},status:'failed',attempts:1,submissionAttempts:1,
+    submittedCodeFingerprints:['old-code'],submissionHistory:[{at:'2026-09-29T05:00:00Z',fingerprint:'old-code',submissionId:'judge-1',status:'rejected'}]};
+  const archived={date,mode:'automatic',username:'Leetcoder071',status:'failed',tasks:[oldTask]};
+  const initial={'automatic-history:one':structuredClone(archived),'automatic-history:two':structuredClone(archived)};
+  let drafts=0;
+  const {runner,runs,calls}=fixture({
+    discover:async()=>({username:'Leetcoder071',questions:[{titleSlug:'daily-question',title:'Daily question',selection:'QOTD'}]}),
+    solve:async()=>({code:`revision ${++drafts}`,provider:'groq'})
+  },initial);
+  runner.start({...config,dailyQuestionCount:1},false,1,'Leetcoder071');await runner.done;
+  assert.equal(calls.submitted.length,1);
+  assert.equal(runs[`automatic:${date}:leetcoder071`].status,'completed');
 });
 
 test('identical regenerated code is not submitted twice',async()=>{

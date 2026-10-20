@@ -178,9 +178,9 @@ test('live practice uses Gemini backup when Groq is temporarily unavailable',asy
   const server=createServer(store,platform,agent);
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   t.after(()=>new Promise(resolve=>server.close(resolve)));
-  const request=()=>fetch(`http://127.0.0.1:${server.address().port}/api/leetcode/solve`,{
+  const request=(extra={})=>fetch(`http://127.0.0.1:${server.address().port}/api/leetcode/solve`,{
     method:'POST',headers:{Authorization:`Bearer ${store.state.adminToken}`,'Content-Type':'application/json'},
-    body:JSON.stringify({problem:{title:'Example',statement:'Practice data',starterCode:'class Solution: pass'}})
+    body:JSON.stringify({problem:{title:'Example',statement:'Practice data',starterCode:'class Solution: pass'},...extra})
   });
   store.state.contestCalendar={events:[{title:'Live rated contest',startAt:new Date(Date.now()-60000).toISOString(),endAt:new Date(Date.now()+60000).toISOString()}]};
   const blocked=await request();
@@ -193,6 +193,9 @@ test('live practice uses Gemini backup when Groq is temporarily unavailable',asy
   assert.equal(store.publicState().providerHealth.groq.status,'temporary');
   assert.equal(store.publicState().providerHealth.gemini.status,'working');
   assert.deepEqual({provider:store.publicState().providerActivity.provider,fallbackFrom:store.publicState().providerActivity.fallbackFrom},{provider:'gemini',fallbackFrom:'groq'});
+  const revised=await request({avoidProvider:'groq',feedback:'Wrong Answer on sample'});
+  assert.equal(revised.status,200);assert.equal((await revised.json()).provider,'gemini');
+  assert.deepEqual(calls,['groq','gemini','gemini']);
 });
 
 test('quota-blocked provider becomes available on the next local day',t=>{

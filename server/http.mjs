@@ -66,7 +66,10 @@ export function createServer(store,platform,agent) {
         if(!input.problem||typeof input.problem.title!=='string'||typeof input.problem.statement!=='string'||typeof input.problem.starterCode!=='string')throw Error('Invalid LeetCode problem');
         if(input.problem.statement.length>90000||input.problem.starterCode.length>30000)throw Error('LeetCode problem is too large');
         let lastError;
-        for(const provider of c.providerOrder) {
+        const providerOrder=input.avoidProvider&&c.providerOrder.includes(input.avoidProvider)
+          ? [...c.providerOrder.filter(p=>p!==input.avoidProvider),input.avoidProvider]
+          : c.providerOrder;
+        for(const provider of providerOrder) {
           if(!store.secret(provider)||store.state.disabledProviders[provider])continue;
           const prompt=leetcodeSolutionPrompt(input.problem,c.language,input.feedback||'');
           const date=localTime(new Date(),c.timezone).date,reserve=Math.ceil(prompt.length/3)+c.maxOutputTokens;

@@ -1,4 +1,4 @@
-import {LeetCodeRunner, archiveRetryableAutomaticRun, automaticRetryDecision, dailyRunForAccount, latestArchivedAutomaticRun, localClock, shouldRetryForLaterSchedule} from './leetcode-runner.js';
+import {LeetCodeRunner, archiveRetryableAutomaticRun, automaticRetryDecision, dailyRunForAccount, latestArchivedAutomaticRun, localClock, loginPrecheckDue, shouldRetryForLaterSchedule} from './leetcode-runner.js';
 import {activeContest,contestRefreshDue} from './contest-calendar.js';
 async function notify(id,title,message){await chrome.notifications.create(id,{type:'basic',iconUrl:'icon.png',title,message:String(message).slice(0,400)});}
 async function serverApi(connection,route,body,signal){const response=await fetch(connection.url+'/api/'+route,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(120000)]):AbortSignal.timeout(120000)});const value=await response.json().catch(()=>({}));if(!response.ok)throw Error(value.error||`Agent request failed (${response.status})`);return value;}
@@ -91,11 +91,11 @@ const runner=new LeetCodeRunner({
     if(!response?.ok)throw Error(response?.error||'Could not read LeetCode');
     return response.value;
   },
-  solve:async(problem,feedback,signal)=>{
+  solve:async(problem,feedback,signal,avoidProvider='')=>{
     await requirePracticeWindow();
     const {connection}=await chrome.storage.local.get('connection');
     if(!connection)throw Error('Connect the extension to the agent first');
-    return serverApi(connection,'leetcode/solve',{problem,feedback},signal);
+    return serverApi(connection,'leetcode/solve',{problem,feedback,avoidProvider},signal);
   },
   verify:async(_problem,code,signal)=>{
     const {connection}=await chrome.storage.local.get('connection');
@@ -180,16 +180,19 @@ async function poll(){
       const existingTabs=(await chrome.tabs.query({url:'https://leetcode.com/*'})).filter(tab=>!tab.discarded);
       const cachedRun=dailyRunForAccount(leetcodeRuns,clock.date,account)||latestArchivedAutomaticRun(leetcodeRuns,clock.date,account);
       const due=state.config.autoMode&&!runner.active&&automaticRetryDecision(cachedRun,state.config).due;
-      const checkWithTemporaryTab=!existingTabs.length&&due&&Date.now()-lastAgentLoginCheckAt>=3600000;
+      const precheck=cachedRun?.status!=='completed'&&loginPrecheckDue(state.config,new Date(),lastAgentLoginCheckAt);
+      const lastCheck=lastAgentLoginCheckAt?localClock(state.config.timezone,new Date(lastAgentLoginCheckAt)):null;
+      const checkAtStart=due&&(!lastCheck||lastCheck.date!==clock.date||lastCheck.time<state.config.dailyStartTime);
+      const checkWithTemporaryTab=!existingTabs.length&&(precheck||due&&(checkAtStart||Date.now()-lastAgentLoginCheckAt>=3600000));
       if(existingTabs.length||checkWithTemporaryTab){
         if(checkWithTemporaryTab)await chrome.storage.local.set({lastAgentLoginCheckAt:Date.now()});
         try{account=await currentAccount(checkWithTemporaryTab);}
         catch(error){accountError=error.message;account='';}
-        if(checkWithTemporaryTab&&!account)await closeAgentLeetCodeTab();
+        if(checkWithTemporaryTab&&(!account||!due))await closeAgentLeetCodeTab();
         await chrome.storage.local.set({leetcodeAccount:account});
         if(accountError||!account){
           const {loginAlertAt=0}=await chrome.storage.local.get('loginAlertAt');
-          if(Date.now()-loginAlertAt>3600000){await notify('leetcode-login','LeetCode login needs attention',accountError||'Sign in to LeetCode in Brave');await chrome.storage.local.set({loginAlertAt:Date.now()});}
+          if(Date.now()-loginAlertAt>3600000){await notify('leetcode-login','LeetCode login needs attention',accountError||`Sign in to LeetCode in Brave before ${state.config.dailyStartTime} to run daily practice`);await chrome.storage.local.set({loginAlertAt:Date.now()});}
         }
       }
     }

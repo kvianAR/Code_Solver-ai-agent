@@ -72,6 +72,19 @@ export function localClock(timeZone, now = new Date()) {
   return {date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}`};
 }
 
+export function loginPrecheckDue(config, now = new Date(), lastCheckAt = 0) {
+  if (!config.autoMode || !config.leetcode?.enabled) return false;
+  const clock=localClock(config.timezone,now);
+  const [hour,minute]=clock.time.split(':').map(Number);
+  const [startHour,startMinute]=config.dailyStartTime.split(':').map(Number);
+  const minutesUntilStart=startHour*60+startMinute-hour*60-minute;
+  if(minutesUntilStart<1||minutesUntilStart>10)return false;
+  if(!lastCheckAt)return true;
+  const last=localClock(config.timezone,new Date(lastCheckAt));
+  return last.date!==clock.date||last.time<clock.time&&
+    (startHour*60+startMinute-Number(last.time.slice(0,2))*60-Number(last.time.slice(3)))>10;
+}
+
 // Daily runs retain the date key for compatibility. Each manual click has a
 // separate key and cannot replace the automatic daily result.
 export class LeetCodeRunner {
@@ -178,9 +191,11 @@ export class LeetCodeRunner {
       await this.io.save(run);
       for (const task of run.tasks) {
         const priorTasks=priorTasksFor(task.problem.titleSlug);
-        const priorSubmissions=priorTasks.reduce((total,t)=>total+Math.max(0,Number(t.submissionAttempts??t.attempts)||0),0);
-        const submittedCodes=new Set(priorTasks.flatMap(t=>[
-          ...(t.submittedCodeFingerprints||[]),...(t.solution?.code?[codeFingerprint(t.solution.code)]:[])]));
+        const priorSubmissionKeys=new Set(priorTasks.flatMap(t=>(t.submissionHistory||[]).map(a=>
+          a.submissionId?`id:${a.submissionId}`:`attempt:${a.at}:${a.fingerprint}`)));
+        const legacySubmissions=priorTasks.filter(t=>!t.submissionHistory?.length).reduce((total,t)=>total+Math.max(0,Number(t.submissionAttempts??t.attempts)||0),0);
+        const priorSubmissions=priorSubmissionKeys.size+legacySubmissions;
+        const submittedCodes=new Set(priorTasks.flatMap(t=>t.submittedCodeFingerprints||[]));
         task.submissionAttempts ||= 0;
         task.submittedCodeFingerprints ||= [];
         while (task.status !== 'accepted' && task.attempts < config.maxAttempts) {
@@ -198,7 +213,8 @@ export class LeetCodeRunner {
           try {
             const rejectedCode=task.submittedCodeFingerprints.length?task.solution?.code:'';
             const feedback=rejectedCode?`${task.feedback}\nPreviously rejected code (do not repeat):\n${rejectedCode.slice(0,3000)}`:task.feedback;
-            solution = await this.io.solve(task.problem, feedback, active.controller.signal);
+            solution = await this.io.solve(task.problem, feedback, active.controller.signal,
+              task.attempts>1?task.provider:'');
             if (active.stop) return await this.finishStopped(run);
             task.provider = solution.provider;
             task.solution = {code: solution.code, explanation: solution.explanation, complexity: solution.complexity};
@@ -234,7 +250,10 @@ export class LeetCodeRunner {
             }
           }catch(error){
             if(active.stop)return await this.finishStopped(run);
-            task.feedback=`Pre-submit check unavailable: ${error.message}`;task.status='blocked';run.reviewRequired=true;
+            task.feedback=`Pre-submit check unavailable: ${error.message}`;task.status='blocked';
+            // Rate limits and temporary network failures did not send a judged
+            // submission. Let the hourly scheduler try again after recovery.
+            if(!/\b429\b|\b5\d\d\b|timed out|timeout|network|fetch failed|connection failed/i.test(error.message))run.reviewRequired=true;
             await this.io.save(run);break;
           }
           const fingerprint=codeFingerprint(solution.code);
@@ -269,6 +288,12 @@ export class LeetCodeRunner {
         if (task.status !== 'accepted' && task.status !== 'blocked') task.status = 'failed';
         await this.io.save(run);
         if (task.status === 'blocked') break;
+        if(!manual&&task.problem?.selection==='QOTD'&&task.status!=='accepted')break;
+      }
+      if(!manual&&!hasAcceptedQotd(run))for(const task of run.tasks){
+        if(task.status==='pending'){
+          task.status='skipped';task.feedback='QOTD must be accepted before other daily questions start.';
+        }
       }
       const readyCount = run.tasks.filter(t => t.status === 'accepted').length;
       run.status = readyCount === run.target && (manual||hasAcceptedQotd(run)) ? 'completed' : run.tasks.some(t => t.status === 'blocked') ? 'blocked' : 'failed';

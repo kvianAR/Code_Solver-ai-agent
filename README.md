@@ -136,8 +136,9 @@ Open **Settings & keys**, enter the provider key and model ID, then select **Sav
 - **Automatic:** set the start time, timezone, and questions/day; enable automatic mode and save. The extension uses whichever LeetCode account is signed in to that browser profile at run time.
 - If an automatic run fails, fix the provider or login issue and click **Retry today’s drafts**. Earlier failed attempts remain in history.
 - In Auto Mode, failed or interrupted daily work retries at the next hourly slot until the day's target is accepted. Accepted questions carry forward; the same run is never submitted twice concurrently. Completion cancels the remaining retry wake events after the wake helper refreshes.
+- The automatic run attempts QOTD first. If QOTD cannot be accepted, it pauses the other daily questions and reports the reason. A temporary LeetCode Run Code rate limit or network failure retries at the next hourly slot; a permanent session or validation failure requires attention.
 - The extension submits a solution only after local syntax checking and LeetCode Run Code examples pass on the account currently signed in to LeetCode. Passing examples reduce avoidable judged attempts but do not guarantee acceptance on hidden tests.
-- A rejected solution is regenerated with judge feedback once. After two judged submissions for the same question on the same day, automatic retries pause and the run asks for review. Repeated identical drafts are never resubmitted.
+- A rejected solution is regenerated with judge feedback. When both configured providers are available, the next draft tries the other provider first. After two distinct judged submissions for the same question on the same day, automatic retries pause and the run asks for review. Archived copies of a submission do not consume extra slots. Repeated identical submitted drafts are never resubmitted.
 - Daily result notifications show the accepted count and first failed question. Clicking one opens that exact run in Solution history. Groq and Gemini cards show the last known connection result and which provider handled the latest solution.
 
 A successful connection test checks a small request. It does not guarantee a larger solution request will succeed.
@@ -164,6 +165,8 @@ A saved encrypted key takes priority over an environment variable. Deleting a sa
 ## Scheduling and a sleeping Mac
 
 **The extension needs Brave running and a signed-in LeetCode session.** If a 10:00 run is missed, the wake helper schedules hourly wake events and the extension resumes on the next wake/poll. A Mac cannot execute browser code while it remains asleep, and closed-lid or battery behavior can prevent a scheduled wake.
+
+The extension checks the LeetCode login shortly before the configured start and alerts if the session has expired. A signed-out account cannot receive accepted submissions; sign in again in the same Brave profile. Once the account is visible, the next extension poll resumes a due daily run. The temporary tab used for the early login check is closed after the check.
 
 For persistent local scheduling on macOS, run from the project folder:
 
