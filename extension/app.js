@@ -1,7 +1,5 @@
 const $=s=>document.querySelector(s);
 const extension=typeof chrome!=='undefined'&&!!chrome.runtime?.id;
-const UI_BUILD='2.8.14';
-if(extension)chrome.storage.local.get('uiBuild').then(({uiBuild})=>{if(uiBuild!==UI_BUILD)chrome.storage.local.set({uiBuild:UI_BUILD}).then(()=>chrome.runtime.reload());});
 let connection=null,state=null,catalog=[],page='today',busy=false,leetcodeRuns={},leetcodeContests=[],contestCalendarUpdatedAt=0,contestCalendarError='',liveRun=null,leetcodeAccount='',leetcodeSession=null,activeRunId=null,stopping=false,dailyDiagnostic=null;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pill=(text,type='')=>`<span class="pill ${type}">${esc(text)}</span>`;
@@ -67,6 +65,7 @@ function renderSettings(){
   const c=state.config,f=$('#settings-form');
   for(const key of ['dailyStartTime','timezone','dailyQuestionCount','language','maxAttempts','dailyTokenBudget','notificationWebhook'])f.elements[key].value=c[key];
   f.elements.providerOrder.value=c.providerOrder.join(',');
+  f.elements.backgroundBrowser.value=c.leetcode?.browser||'chrome';
   f.elements.autoMode.checked=c.autoMode;f.elements.preferQuestionOfTheDay.checked=true;
   for(const d of ['Easy','Medium','Hard'])f.elements[d].checked=c.allowedDifficulties.includes(d);
   const platform=$('#platform-form');platform.elements.type.value=c.platform.type;platform.elements.baseUrl.value=c.platform.baseUrl;platform.elements.ownedSolutionStyle.value=c.ownedSolutionStyle;
@@ -86,7 +85,7 @@ $('#connect-form').addEventListener('submit',async e=>{
   if(parsed.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(parsed.hostname)){toast('Use HTTPS for a cloud server.');return;}
   if(extension&&parsed.protocol==='https:'){const allowed=await chrome.permissions.request({origins:[parsed.origin+'/*']});if(!allowed){toast('Server permission was not granted');return;}}
   connection={url,token:$('#connection-token').value.trim()};
-  try{state=await api('state');await saveConnection(connection);catalog=await api('catalog');populateCatalog();render();$('#connection-token').value='';if(extension)chrome.runtime.sendMessage({type:'poll'});}catch(err){toast(err.message);}
+  try{state=await api('state');await saveConnection(connection);await refresh();$('#connection-token').value='';api('catalog').then(items=>{catalog=items;populateCatalog();}).catch(error=>toast(`Question list unavailable: ${error.message}`));if(extension)chrome.runtime.sendMessage({type:'poll'});}catch(err){toast(err.message);}
 });
 function populateCatalog(){const select=$('#contest-questions');if(select)select.innerHTML=catalog.map(p=>`<option value="${esc(p.id)}">${esc(p.title)} — ${esc(p.difficulty)}</option>`).join('');}
 $('#refresh').addEventListener('click',refresh);
@@ -113,7 +112,7 @@ $('#settings-form').addEventListener('submit',e=>{
   e.preventDefault();
   const f=e.currentTarget,previousTime=state.config.dailyStartTime,previousTimezone=state.config.timezone;
   action(async()=>{
-    await api('config',{dailyStartTime:f.elements.dailyStartTime.value,timezone:f.elements.timezone.value,dailyQuestionCount:Number(f.elements.dailyQuestionCount.value),language:f.elements.language.value,maxAttempts:Number(f.elements.maxAttempts.value),dailyTokenBudget:Number(f.elements.dailyTokenBudget.value),providerOrder:f.elements.providerOrder.value.split(','),autoMode:f.elements.autoMode.checked,preferQuestionOfTheDay:true,allowedDifficulties:['Easy','Medium','Hard'].filter(d=>f.elements[d].checked),notificationWebhook:f.elements.notificationWebhook.value,leetcode:{enforceUsername:false}});
+    await api('config',{dailyStartTime:f.elements.dailyStartTime.value,timezone:f.elements.timezone.value,dailyQuestionCount:Number(f.elements.dailyQuestionCount.value),language:f.elements.language.value,maxAttempts:Number(f.elements.maxAttempts.value),dailyTokenBudget:Number(f.elements.dailyTokenBudget.value),providerOrder:f.elements.providerOrder.value.split(','),autoMode:f.elements.autoMode.checked,preferQuestionOfTheDay:true,allowedDifficulties:['Easy','Medium','Hard'].filter(d=>f.elements[d].checked),notificationWebhook:f.elements.notificationWebhook.value,leetcode:{enforceUsername:false,browser:f.elements.backgroundBrowser.value}});
     if(!extension)return;
     const scheduleChanged=previousTime!==f.elements.dailyStartTime.value||previousTimezone!==f.elements.timezone.value;
     if(scheduleChanged){
@@ -137,5 +136,5 @@ $('#provider-cards').addEventListener('click',e=>{const p=e.target.dataset.testP
 $('#platform-form').addEventListener('submit',e=>{e.preventDefault();const f=e.currentTarget;action(async()=>{if(f.elements.key.value)await api('keys',{provider:'platform',key:f.elements.key.value});await api('config',{ownedSolutionStyle:f.elements.ownedSolutionStyle.value,platform:{type:f.elements.type.value,baseUrl:f.elements.baseUrl.value}});f.elements.key.value='';catalog=await api('catalog');populateCatalog();});});
 $('#history').addEventListener('click',e=>{if(e.target.dataset.retry)action(()=>api('retry',{id:e.target.dataset.retry}));});
 $('#disconnect').addEventListener('click',async()=>{await saveConnection(null);connection=null;$('#workspace').hidden=true;$('#connect-panel').hidden=false;$('#connection-dot').classList.remove('online');$('#connection-status').textContent='Not connected';});
-async function init(){connection=await loadConnection();if(!extension)$('#server-url').value=location.origin;else{const{manualQuestionCount=2}=await chrome.storage.local.get('manualQuestionCount');$('#manual-count').value=Math.max(1,Math.min(100,Number(manualQuestionCount)||2));}if(connection){try{catalog=await api('catalog');populateCatalog();await refresh();}catch(e){toast(e.message);}}if(location.hash==='#contests')document.querySelector('nav [data-page="contests"]')?.click();setInterval(refresh,5000);if(extension)chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&(changes.leetcodeRuns||changes.leetcodeContests))refresh();});}
+async function init(){connection=await loadConnection();if(!extension)$('#server-url').value=location.origin;else{const{manualQuestionCount=2}=await chrome.storage.local.get('manualQuestionCount');$('#manual-count').value=Math.max(1,Math.min(100,Number(manualQuestionCount)||2));}if(connection){await refresh();api('catalog').then(items=>{catalog=items;populateCatalog();}).catch(error=>toast(`Question list unavailable: ${error.message}`));}if(location.hash==='#contests')document.querySelector('nav [data-page="contests"]')?.click();setInterval(refresh,5000);if(extension)chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&(changes.leetcodeRuns||changes.leetcodeContests))refresh();});}
 init();

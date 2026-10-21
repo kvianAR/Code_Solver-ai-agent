@@ -4,7 +4,7 @@
   "dailyQuestionCount": 2,
   "autoMode": true,
   "preferQuestionOfTheDay": true,
-  "leetcode": {"enabled": true, "username": "your-username", "enforceUsername": false},
+  "leetcode": {"enabled": true, "username": "your-username", "enforceUsername": false, "browser": "chrome"},
   "allowedDifficulties": ["Easy", "Medium", "Hard"],
   "language": "python",
   "ownedSolutionStyle": "natural",

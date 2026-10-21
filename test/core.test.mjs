@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {Store} from '../server/store.mjs';
+import {validateConfig} from '../server/config.mjs';
 import {Agent} from '../server/agent.mjs';
 import {Platform} from '../server/platform.mjs';
 import {buildPlan,selectDaily} from '../server/planner.mjs';
@@ -43,6 +44,12 @@ test('updated defaults preserve saved schedule and provider models',t=>{
   const reloaded=new Store(dir);
   assert.equal(reloaded.state.config.dailyStartTime,'17:41');
   assert.equal(reloaded.state.config.models.gemini,'custom-model');
+  assert.equal(reloaded.state.config.leetcode.browser,'chrome');
+});
+test('background wake browser accepts Chrome or Brave only',t=>{
+  const {store}=fixture(t);
+  assert.equal(validateConfig({...store.state.config,leetcode:{...store.state.config.leetcode,browser:'brave'}}).leetcode.browser,'brave');
+  assert.throws(()=>validateConfig({...store.state.config,leetcode:{...store.state.config.leetcode,browser:'other'}}),/Chrome or Brave/);
 });
 test('Monday rolling plan starts at basics even if installed midweek',async t=>{
   const {store,platform}=fixture(t);const plan=await buildPlan(store,platform,'2026-09-29');

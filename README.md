@@ -93,6 +93,7 @@ Requirements:
 
 - **Node.js 22+** and npm.
 - **Brave or Chrome**, with LeetCode signed in.
+- In **Settings & keys**, choose the same browser under **Browser for background wake**. The default is Chrome. Keep Practice Ex. installed in that browser profile.
 - At least one working **Groq or Gemini API key** and a model available to your account.
 - **Python 3** for Python draft syntax checking. JavaScript checks use Node.js.
 - Docker only if you want the optional owned test sandbox; it is not required for live draft preparation.

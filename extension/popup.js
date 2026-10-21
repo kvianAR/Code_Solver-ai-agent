@@ -8,8 +8,8 @@ function setMessage(message,success=false){$('#message').textContent=message||''
 async function refresh(){
   const [{connection,lastConnected=0,lastState,leetcodeRuns={},leetcodeAccount='',leetcodeSession,dailyDiagnostic},[tab],live]=await Promise.all([
     chrome.storage.local.get(['connection','lastConnected','lastState','leetcodeRuns','leetcodeAccount','leetcodeSession','dailyDiagnostic']),
-    chrome.tabs.query({active:true,currentWindow:true}),
-    chrome.runtime.sendMessage({type:'leetcode-run-status'}).catch(()=>({}))
+    chrome.tabs.query({active:true,currentWindow:true}).catch(()=>[]),
+    Promise.race([chrome.runtime.sendMessage({type:'leetcode-run-status'}).catch(()=>({})),new Promise(resolve=>setTimeout(()=>resolve({}),2000))])
   ]);
   const connected=!!connection&&Date.now()-lastConnected<3*60000;
   const badge=$('#connection');badge.textContent=connected?'Connected':connection?'Agent offline':'Setup needed';badge.className='connection '+(connected?'online':'offline');
