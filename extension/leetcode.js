@@ -38,7 +38,7 @@
     return shuffle(candidates);
   }
   async function discover(options){
-    const user=(await graphql(USER_QUERY)).userStatus;if(!user?.isSignedIn)throw Error('Brave me LeetCode login required');
+    const user=(await graphql(USER_QUERY)).userStatus;if(!user?.isSignedIn)throw Error('Sign in to LeetCode in this browser profile');
     if(options.enforceUsername&&options.username&&user.username.toLowerCase()!==options.username.toLowerCase())throw Error(`Wrong LeetCode account: ${user.username}. Expected ${options.username}.`);
     if(options.requestedSlug){
       if(!/^[a-z0-9-]+$/.test(options.requestedSlug))throw Error('Invalid LeetCode question link');
@@ -80,7 +80,7 @@
   const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   async function preflight(problem,code,expectedUsername){
     const user=(await graphql(USER_QUERY)).userStatus;
-    if(!user?.isSignedIn)throw Error('Brave me LeetCode login required');
+    if(!user?.isSignedIn)throw Error('Sign in to LeetCode in this browser profile');
     if(expectedUsername&&user.username.toLowerCase()!==expectedUsername.toLowerCase())throw Error(`LeetCode account changed during Run Code: ${user.username}`);
     if(!problem.exampleTestcases?.trim())throw Error('LeetCode examples unavailable; no judged submission was sent');
     const csrf=document.cookie.split('; ').find(value=>value.startsWith('csrftoken='))?.split('=').slice(1).join('=');
@@ -109,7 +109,7 @@
   }
   async function submit(problem,code,expectedUsername){
     const user=(await graphql(USER_QUERY)).userStatus;
-    if(!user?.isSignedIn)throw Error('Brave me LeetCode login required');
+    if(!user?.isSignedIn)throw Error('Sign in to LeetCode in this browser profile');
     if(expectedUsername&&user.username.toLowerCase()!==expectedUsername.toLowerCase())throw Error(`LeetCode account changed during submission: ${user.username}`);
     const csrf=document.cookie.split('; ').find(value=>value.startsWith('csrftoken='))?.split('=').slice(1).join('=');
     if(!csrf)throw Error('LeetCode session token unavailable. Reload the LeetCode tab and sign in again.');

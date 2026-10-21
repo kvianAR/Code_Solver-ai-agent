@@ -6,8 +6,8 @@ const countAccepted=run=>(run?.tasks||[]).filter(task=>task.status==='accepted')
 let busy=false;
 function setMessage(message,success=false){$('#message').textContent=message||'';$('#message').classList.toggle('success',success);}
 async function refresh(){
-  const [{connection,lastConnected=0,lastState,leetcodeRuns={},leetcodeAccount='',dailyDiagnostic},[tab],live]=await Promise.all([
-    chrome.storage.local.get(['connection','lastConnected','lastState','leetcodeRuns','leetcodeAccount','dailyDiagnostic']),
+  const [{connection,lastConnected=0,lastState,leetcodeRuns={},leetcodeAccount='',leetcodeSession,dailyDiagnostic},[tab],live]=await Promise.all([
+    chrome.storage.local.get(['connection','lastConnected','lastState','leetcodeRuns','leetcodeAccount','leetcodeSession','dailyDiagnostic']),
     chrome.tabs.query({active:true,currentWindow:true}),
     chrome.runtime.sendMessage({type:'leetcode-run-status'}).catch(()=>({}))
   ]);
@@ -19,7 +19,7 @@ async function refresh(){
   const runs=Object.values(leetcodeRuns).filter(run=>account&&run.username?.toLowerCase()===account.toLowerCase());
   const daily=runs.find(run=>run.mode==='automatic'&&run.date===today);
   const accepted=countAccepted(daily),todayTarget=Number(daily?.target)||target;
-  $('#account').textContent=account?`Signed in: ${account}`:'LeetCode login needed';
+  $('#account').textContent=leetcodeSession?.status==='unavailable'?'LeetCode login check unavailable':leetcodeSession?.status==='signed-out'?'LeetCode login needed':account?`Last verified: ${account}`:'LeetCode login not yet checked';
   $('#today-progress').textContent=`${accepted}/${todayTarget}`;
   $('#ring').style.setProperty('--progress',`${Math.min(100,Math.round(accepted/todayTarget*100))}%`);
   $('#run-status').textContent=live?.activeId?'Solving now':daily?.status?daily.status.charAt(0).toUpperCase()+daily.status.slice(1):config.autoMode?'Scheduled':'Auto Mode paused';
@@ -41,6 +41,6 @@ async function refresh(){
 $('#solve').addEventListener('click',async()=>{busy=true;$('#solve').disabled=true;setMessage('Starting this question…',true);try{const result=await chrome.runtime.sendMessage({type:'solve-current-question'});if(!result?.ok)throw Error(result?.error||'Could not start');if(!result.started)throw Error(result.reason||'A session is already running');setMessage('Started. Progress appears here and in the dashboard.',true);}catch(error){setMessage(error.message);}finally{busy=false;await refresh();}});
 $('#stop').addEventListener('click',async()=>{const result=await chrome.runtime.sendMessage({type:'stop-leetcode'});setMessage(result?.stopped?'Stopping current run…':'No run is active.',!!result?.stopped);await refresh();});
 $('#dashboard').addEventListener('click',()=>chrome.tabs.create({url:chrome.runtime.getURL('dashboard.html')}));
-chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&(changes.leetcodeRuns||changes.lastState||changes.leetcodeAccount||changes.dailyDiagnostic))refresh().catch(error=>setMessage(error.message));});
+chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&(changes.leetcodeRuns||changes.lastState||changes.leetcodeAccount||changes.leetcodeSession||changes.dailyDiagnostic))refresh().catch(error=>setMessage(error.message));});
 refresh().catch(error=>setMessage(error.message));
 setInterval(()=>refresh().catch(()=>{}),3000);

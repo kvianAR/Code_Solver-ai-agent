@@ -54,7 +54,7 @@ export function createServer(store,platform,agent) {
         if(Number.isFinite(r.tokens))u.tokens=Math.max(0,u.tokens-192+r.tokens);
         delete store.state.disabledProviders[provider];store.providerResult(provider,'working');agent.resumeBlocked();send(200,{ok:true,message:'Provider connected'});
       }else if(route==='POST /api/run') {
-        if(store.state.config.leetcode?.enabled)throw Error('Use the Brave extension to run the live LeetCode session');
+        if(store.state.config.leetcode?.enabled)throw Error('Use the Practice Ex. extension in the signed-in browser to run the live LeetCode session');
         if(!store.state.config.autoMode)throw Error('Turn Auto Mode on first');
         const j=await agent.daily(localTime(new Date(),store.state.config.timezone).date);agent.pump();send(202,{id:j.id});
       }else if(route==='POST /api/leetcode/solve') {

@@ -164,9 +164,9 @@ A saved encrypted key takes priority over an environment variable. Deleting a sa
 
 ## Scheduling and a sleeping Mac
 
-**The extension needs Brave running and a signed-in LeetCode session.** If a 10:00 run is missed, the wake helper schedules hourly wake events and the extension resumes on the next wake/poll. A Mac cannot execute browser code while it remains asleep, and closed-lid or battery behavior can prevent a scheduled wake.
+**The extension needs its browser running and a signed-in LeetCode session in the same browser profile.** If a 10:00 run is missed, the wake helper schedules hourly wake events and the extension resumes on the next wake/poll. A Mac cannot execute browser code while it remains asleep, and closed-lid or battery behavior can prevent a scheduled wake.
 
-The extension checks the LeetCode login shortly before the configured start and alerts if the session has expired. A signed-out account cannot receive accepted submissions; sign in again in the same Brave profile. Once the account is visible, the next extension poll resumes a due daily run. The temporary tab used for the early login check is closed after the check.
+The extension checks the LeetCode login shortly before the configured start and alerts if the session has expired. A signed-out account cannot receive accepted submissions; sign in again in the browser profile where Practice Ex. is installed. Once the account is visible, the next extension poll resumes a due daily run. A temporary LeetCode network/API failure is shown as **login check unavailable** rather than a false logout; the extension retries and never submits while login is unverified. The temporary tab used for the early login check is closed after the check. Chrome and Brave keep separate LeetCode sessions, so signing in to one does not sign in to the other.
 
 For persistent local scheduling on macOS, run from the project folder:
 
@@ -174,7 +174,7 @@ For persistent local scheduling on macOS, run from the project folder:
 npm run background:install
 ```
 
-This installs the local server as a login service and the wake helper as a system service. macOS asks for your administrator password. Keep Brave open and your user logged in before sleep.
+This installs the local server as a login service and the wake helper as a system service. macOS asks for your administrator password. Keep the browser with Practice Ex. open and your user logged in before sleep.
 
 ```bash
 # Show service state and power events
@@ -189,7 +189,7 @@ npm run background:uninstall
 
 The helper watches saved state changes and refreshes the daily wake schedule, hourly retry wakes, and contest wakes. For a **15:50** practice time, the first wake is **15:45**; if the target is incomplete, another wake is scheduled for **16:45**. The extension retries at the next hourly slot and carries forward already accepted questions, so a 1/2 run needs only one more acceptance. A missed first run starts on wake. The dashboard’s **Why didn’t it run?** panel shows the known reason and next retry time.
 
-After updating this release, run `npm run background:install` again so macOS uses the new wake helper. This requires your administrator password. Reload the unpacked extension in Brave as described below.
+After updating the wake-helper code, run `npm run background:install` again so macOS uses it. This requires your administrator password. For an extension-only update, reload the unpacked extension in the browser where you use Practice Ex.; the wake helper does not need reinstalling.
 
 For a sleep test, choose a time at least ten minutes ahead, save it, check status, and then put the Mac to sleep. Hardware, closed-lid behavior, battery state, and macOS may affect scheduled waking. This is not guaranteed powered-off execution.
 
@@ -236,10 +236,12 @@ A same-day stopped/failed automatic run can be archived and retried when moved t
 | `Local syntax check unavailable` | Install Python 3 for Python drafts; ensure it is available to the background service. Review any unchecked draft carefully. |
 | Wake schedule is wrong | Run `npm run background:status`; match the Mac and configured timezone. |
 | `Agent connection unavailable` | Check `http://localhost:8787/health`, service status, server URL, and connection token. |
+| Repeated `LOGIN` badge | Open LeetCode in the same Chrome/Brave profile as Practice Ex. and confirm your avatar appears. If it repeatedly signs out after a browser restart, check that this profile retains LeetCode cookies; avoid clearing LeetCode site data on exit. The extension cannot restore an expired LeetCode login itself. |
+| `CHECK` badge or `login check unavailable` | LeetCode or the network did not answer the session check. Keep the browser online and let the next scheduled check retry; this does not mean the account was logged out. |
 
 Updating an unpacked extension requires **Reload on its extension card**. Refreshing a dashboard tab alone does not reload the background worker. After an update, reopen existing LeetCode tabs so content scripts also refresh.
 
-Current limitation: local syntax checks do not run examples or hidden tests. A `ready` draft may be incorrect. API service health must be checked using your own account; automated tests use mocked provider responses.
+Current limitation: local syntax checks and LeetCode example runs cannot prove all hidden tests will pass. API service health must be checked using your own account; automated tests use mocked provider responses.
 
 ## Development
 
