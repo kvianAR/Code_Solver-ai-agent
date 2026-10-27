@@ -96,7 +96,7 @@
     try{await idle();await updateRequest('install',{id:prepared.id},'install');$('#update-status').textContent='Installing checked release. Waiting for the local server…';$('#install-update').hidden=true;watchUpdate(prepared.version);}catch(error){toast(error.message);}
   });
   $('#list-rollbacks').addEventListener('click',async()=>{
-    try{const result=await api('updates');$('#rollback-id').innerHTML=result.snapshots.map(row=>`<option value="${esc(row.id)}" data-version="${esc(row.version)}">${esc(row.version)} · ${esc(row.createdAt)}</option>`).join('');if(!result.snapshots.length)toast('Restore points are created before an update or rollback.');}catch(error){toast(error.message);}
+    try{const result=await api('updates');$('#rollback-id').innerHTML=result.snapshots.map(row=>`<option value="${esc(row.id)}" data-version="${esc(row.version)}">${esc(row.version)} · ${esc(formatDate(row.createdAt,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}))}</option>`).join('');if(!result.snapshots.length)toast('Restore points are created before an update or rollback.');}catch(error){toast(error.message);}
   });
   $('#rollback-update').addEventListener('click',async()=>{
     try{await idle();const select=$('#rollback-id'),id=select.value;if(!id)throw Error('Load and choose a restore point first');const version=select.selectedOptions[0].dataset.version;await updateRequest('rollback',{id},'rollback');$('#update-status').textContent='Restoring selected code version. Current history and keys are preserved.';watchUpdate(version);}catch(error){toast(error.message);}
