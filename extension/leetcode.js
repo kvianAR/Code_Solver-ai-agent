@@ -21,21 +21,23 @@
   }
   const QUESTION_QUERY=`query questionData($titleSlug: String!) { question(titleSlug: $titleSlug) { questionId questionFrontendId title titleSlug content difficulty isPaidOnly status exampleTestcases codeSnippets { lang langSlug code } topicTags { name slug } } }`;
   const DAILY_QUERY=`query questionOfToday { activeDailyCodingChallengeQuestion { date link question { title titleSlug difficulty isPaidOnly } } }`;
-  const LIST_QUERY=`query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $filters: QuestionListFilterInput) { problemsetQuestionList: questionList(categorySlug: $categorySlug, limit: $limit, skip: $skip, filters: $filters) { total: totalNum questions: data { titleSlug difficulty paidOnly: isPaidOnly status } } }`;
+  const LIST_QUERY=`query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $filters: QuestionListFilterInput) { problemsetQuestionList: questionList(categorySlug: $categorySlug, limit: $limit, skip: $skip, filters: $filters) { total: totalNum questions: data { titleSlug difficulty paidOnly: isPaidOnly status topicTags { name } } } }`;
   const USER_QUERY=`query globalData { userStatus { isSignedIn username } }`;
   function plainText(html){const doc=new DOMParser().parseFromString(String(html||''),'text/html');doc.querySelectorAll('script,style').forEach(n=>n.remove());return(doc.body.textContent||'').replace(/\n\s*\n\s*\n+/g,'\n\n').trim();}
   async function question(slug,language){const q=(await graphql(QUESTION_QUERY,{titleSlug:slug})).question;if(!q)return null;const langSlug=language==='javascript'?'javascript':'python3',snippet=q.codeSnippets?.find(x=>x.langSlug===langSlug)||q.codeSnippets?.[0];return{id:q.questionId,frontendId:q.questionFrontendId,title:q.title,titleSlug:q.titleSlug,difficulty:q.difficulty,paidOnly:!!q.isPaidOnly,status:q.status||null,statement:plainText(q.content),starterCode:snippet?.code||'',langSlug:snippet?.langSlug||langSlug,exampleTestcases:q.exampleTestcases||'',topics:(q.topicTags||[]).map(x=>x.name)};}
   function shuffle(values){const result=[...values];for(let i=result.length-1;i>0;i--){const bytes=new Uint32Array(1);crypto.getRandomValues(bytes);const j=bytes[0]%(i+1);[result[i],result[j]]=[result[j],result[i]];}return result;}
-  async function problemsetSlugs(allowed,seen,wanted){
+  async function problemsetSlugs(allowed,seen,wanted,weakTopics=[]){
     const candidates=[];
     try{
       for(let skip=0;skip<1000&&candidates.length<wanted*3;skip+=100){
-        const list=(await graphql(LIST_QUERY,{categorySlug:'',skip,limit:100,filters:{}})).problemsetQuestionList;
-        for(const item of list?.questions||[])if(item?.titleSlug&&!seen.has(item.titleSlug)&&!item.paidOnly&&item.status==null&&allowed.has(item.difficulty))candidates.push(item.titleSlug);
+        const filters=weakTopics.length?{tags:[weakTopics[0].toLowerCase().replace(/\s+/g,'-')]}:{};
+        const list=(await graphql(LIST_QUERY,{categorySlug:'',skip,limit:100,filters})).problemsetQuestionList;
+        for(const item of list?.questions||[])if(item?.titleSlug&&!seen.has(item.titleSlug)&&!item.paidOnly&&item.status==null&&allowed.has(item.difficulty))candidates.push({slug:item.titleSlug,weak:(item.topicTags||[]).some(t=>weakTopics.includes(t.name))});
         if(!list||skip+100>=list.total)break;
       }
-    }catch(error){throw Error(`LeetCode question list unavailable: ${error.message}`);}
-    return shuffle(candidates);
+    }catch(error){if(weakTopics.length)return problemsetSlugs(allowed,seen,wanted,[]);throw Error(`LeetCode question list unavailable: ${error.message}`);}
+    if(!candidates.length&&weakTopics.length)return problemsetSlugs(allowed,seen,wanted,[]);
+    return shuffle(candidates).sort((a,b)=>Number(b.weak)-Number(a.weak)).map(item=>item.slug);
   }
   async function discover(options){
     const user=(await graphql(USER_QUERY)).userStatus;if(!user?.isSignedIn)throw Error('Sign in to LeetCode in this browser profile');
@@ -62,13 +64,18 @@
         }
       }catch(error){if(options.requireQotd)throw Error(`QOTD required: ${error.message}`);qotdNote='QOTD lookup failed; using another question.';}
     }
+    for(const slug of (options.reviewSlugs||[]).slice(0,10)){
+      if(chosen.length>=options.count||chosen.some(q=>q.selection==='REVISION'))break;
+      if(!/^[a-z0-9-]+$/.test(slug)||(options.acceptedTodaySlugs||[]).includes(slug)||chosen.some(q=>q.titleSlug===slug))continue;
+      const q=await question(slug,options.language);if(q&&!q.paidOnly&&allowed.has(q.difficulty)){q.selection='REVISION';chosen.push(q);seen.add(slug);}
+    }
     const completed=Math.max(0,Number(options.completedCount)||0),start=Math.min(Math.floor(completed/10)*10,Math.max(0,ROADMAP.length-20));
     if(options.selectionMode!=='random'){
       const ordered=[...shuffle(ROADMAP.slice(start,start+20)),...shuffle(ROADMAP.slice(0,start)),...shuffle(ROADMAP.slice(start+20))];
       for(const slug of ordered){if(chosen.length>=options.count)break;if(seen.has(slug))continue;const q=await question(slug,options.language);if(q&&!q.paidOnly&&q.status==null&&allowed.has(q.difficulty)){q.selection='ROADMAP';chosen.push(q);seen.add(slug);}}
     }
     if(chosen.length<options.count){
-      const slugs=await problemsetSlugs(allowed,seen,options.count-chosen.length);
+      const slugs=await problemsetSlugs(allowed,seen,options.count-chosen.length,options.weakTopics||[]);
       for(const slug of slugs){
         if(chosen.length>=options.count)break;
         const q=await question(slug,options.language);
@@ -87,7 +94,7 @@
     if(!csrf)throw Error('LeetCode session token unavailable. Reload the LeetCode tab and sign in again.');
     const response=await fetch(`/problems/${encodeURIComponent(problem.titleSlug)}/interpret_solution/`,{
       method:'POST',credentials:'include',headers:{'content-type':'application/json','x-csrftoken':decodeURIComponent(csrf),'x-requested-with':'XMLHttpRequest'},
-      body:JSON.stringify({lang:problem.langSlug||'python3',question_id:String(problem.id),typed_code:code,data_input:problem.exampleTestcases})
+      body:JSON.stringify({lang:problem.langSlug||'python3',question_id:String(problem.id),typed_code:code,data_input:[problem.exampleTestcases,...(problem.additionalTestcases||[]).filter(t=>typeof t.input==='string'&&t.input.length<=4096).slice(0,4).map(t=>t.input)].join('\n')})
     });
     if(!response.ok)throw Error(`LeetCode Run Code unavailable (${response.status}); no judged submission was sent`);
     const result=await response.json(),runId=result.interpret_id||result.interpretId;
@@ -103,7 +110,7 @@
       const matched=comparable&&expected.every((value,index)=>String(value).trim()===String(actual[index]).trim());
       const ok=judged.run_success===true&&(judged.correct_answer===true||judged.correct_answer==null&&matched);
       const feedback=[judged.status_msg,judged.compile_error,judged.runtime_error,judged.last_testcase&&`Testcase: ${judged.last_testcase}`,expected&&`Expected: ${JSON.stringify(expected)}`,actual&&`Output: ${JSON.stringify(actual)}`].filter(Boolean).join(' ');
-      return{ok,feedback:ok?'LeetCode examples passed':feedback||'LeetCode examples did not pass'};
+      return{ok,extraCases:Math.min(4,problem.additionalTestcases?.length||0),feedback:ok?'LeetCode examples and supplied boundary cases passed':feedback||'LeetCode examples or supplied boundary cases did not pass'};
     }
     throw Error('LeetCode Run Code timed out; no judged submission was sent');
   }

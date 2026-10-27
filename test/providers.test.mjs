@@ -57,3 +57,9 @@ test('available models use provider authentication and filter Gemini generation 
     assert.deepEqual(await listModels('gemini','private-key',config),['generate-model']);
   }finally{globalThis.fetch=original;}
 });
+
+test('generated boundary inputs are bounded and never treated as expected answers',async()=>{
+  const {decodeSolution}=await import('../server/providers.mjs');
+  const result=decodeSolution(JSON.stringify({code:'pass',testCases:[{input:'[1]\n0',expected:'untrusted',reason:'small'},...Array.from({length:8},()=>({input:'x'.repeat(5000)}))]}));
+  assert.equal(result.testCases.length,1);assert.equal(result.testCases[0].expected,undefined);
+});

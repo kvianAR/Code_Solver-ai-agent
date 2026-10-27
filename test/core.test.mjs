@@ -237,6 +237,27 @@ test('setup diagnostics stay authenticated and do not make provider calls',async
   assert.equal((await fetch(url+'/api/diagnostics')).status,401);
   const response=await fetch(url+'/api/diagnostics',{headers:{Authorization:'Bearer '+store.state.adminToken}});
   assert.equal(response.status,200);const result=await response.json();
-  assert.equal(result.version,'2.9.0');assert.ok(result.checks.some(c=>c.id==='syntax'&&c.ok));
+  assert.equal(result.version,'3.0.0');assert.ok(result.checks.some(c=>c.id==='syntax'&&c.ok));
   assert.ok(!JSON.stringify(result).includes(store.state.adminToken));assert.deepEqual(store.state.usage,{});
+});
+
+test('learning stages use session budgets and do not expose a solution on a hint request',async t=>{
+  const prompts=[];const {store,platform,agent}=fixture(t,{complete:async(_provider,_key,_model,prompt)=>{prompts.push(prompt);return {text:JSON.stringify({text:'Think about a hash map',code:'must not be revealed'}),tokens:50,inputTokens:40,outputTokens:10};}});
+  store.state.config.leetcode.enabled=true;store.setSecret('gemini','fake-key');
+  const server=createServer(store,platform,agent);await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const url='http://127.0.0.1:'+server.address().port,headers={Authorization:'Bearer '+store.state.adminToken,'Content-Type':'application/json'};
+  const problem={title:'Two Sum',statement:'Find a pair',starterCode:'class Solution: pass'};
+  const r=await fetch(url+'/api/learning',{method:'POST',headers,body:JSON.stringify({problem,stage:'hint',sessionId:'learning:test'})});
+  assert.equal(r.status,200);const result=await r.json();assert.equal(result.text,'Think about a hash map');assert.equal(result.code,undefined);assert.match(prompts[0],/without code/);
+  const day=Object.keys(store.state.usage)[0];assert.equal(store.state.usage[day].sessions['learning:test'].calls,1);assert.equal(store.state.jobs.length,0);
+});
+
+test('backup and restore endpoints require auth and reject invalid input without changing state',async t=>{
+  const {store,platform,agent}=fixture(t);const before=JSON.stringify(store.state.config);
+  const server=createServer(store,platform,agent);await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const url='http://127.0.0.1:'+server.address().port,headers={Authorization:'Bearer '+store.state.adminToken,'Content-Type':'application/json'};
+  assert.equal((await fetch(url+'/api/backup')).status,401);
+  const exported=await (await fetch(url+'/api/backup',{headers})).json();assert.equal(exported.format,'practice-ex.backup');assert.ok(!JSON.stringify(exported).includes(store.state.adminToken));
+  assert.equal((await fetch(url+'/api/restore',{method:'POST',headers,body:'{"format":"unknown"}'})).status,400);assert.equal(JSON.stringify(store.state.config),before);
+  for(const asset of ['advanced.js','practice-plan.js','portable-data.js','failure-guide.js'])assert.equal((await fetch(url+'/'+asset)).status,200);
 });

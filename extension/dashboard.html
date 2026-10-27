@@ -18,6 +18,7 @@
 <button data-page="plan">▦ &nbsp; Two-week plan</button>
 <button data-page="contests">⚑ &nbsp; LeetCode contests</button>
 <button data-page="history">↗ &nbsp; Solution history</button>
+<button data-page="learn">◇ &nbsp; Learning mode</button>
 <button data-page="settings">⚙ &nbsp; Settings & keys</button>
 </nav>
 <div class="aside-foot">
@@ -57,6 +58,8 @@
 <div id="setup-checks" class="checks">Checking connection…</div>
 <small id="version-status"></small>
 <button id="fix-setup" type="button" class="quiet">Open settings</button>
+<button id="browser-self-check" type="button" class="quiet">Check this browser</button>
+<p id="browser-check-result" class="muted"></p>
 </section>
 <section class="page" id="page-today">
 <div class="page-title">
@@ -96,6 +99,8 @@
 <small id="token-budget">Budget</small>
 </article>
 </div>
+<div class="card" style="margin-top:16px"><h2>Your next focus</h2><p id="practice-focus">Topic recommendations appear after recorded practice.</p><small id="revision-due"></small></div>
+<div class="card" style="margin-top:16px"><h2>AI usage and cost</h2><div id="usage-breakdown"></div><p class="muted">USD estimates use your entered model prices. Unknown prices are not treated as free. Failed or unreported calls retain their maximum token reservation. Provider billing is the source of truth.</p></div>
 <div class="card" style="margin-top:16px">
 <strong>Submission accuracy</strong>
 <p id="accuracy-summary">Accuracy metrics start with the next session.</p>
@@ -111,6 +116,7 @@
 <strong>Why didn’t it run?</strong>
 <p id="daily-diagnosis">Checking today’s schedule…</p>
 <small id="next-retry"></small>
+<p id="failure-action"></p>
 <button id="recover-results" type="button" class="quiet" hidden>Check pending submission results</button>
 </div>
 <div class="section-label">
@@ -178,6 +184,12 @@
 </div>
 <div id="history" class="stack">
 </div>
+</section>
+<section class="page" id="page-learn" hidden>
+<div class="page-title"><div><span class="eyebrow">LEARN BEFORE REVEALING</span><h1>Work through the problem.</h1><p>Hints and code reviews use your selected AI provider. They do not submit anything to LeetCode.</p></div></div>
+<div class="card"><button id="learn-load" type="button" class="primary">Load current question</button><p>Open a LeetCode problem in the active tab, use the extension popup’s Learn button, then continue here.</p><h2 id="learn-title">No question loaded</h2><p id="learn-statement"></p>
+<div class="checks"><button type="button" data-learn="hint">Get a hint</button><button type="button" data-learn="approach">Explain the approach</button><button type="button" data-learn="solution">Reveal full solution</button></div>
+<label>Your attempt<textarea id="learn-code" rows="12" spellcheck="false" placeholder="Paste your code for a review"></textarea></label><button type="button" data-learn="review">Review my code</button><div id="learn-output" aria-live="polite"></div></div>
 </section>
 <section class="page" id="page-settings" hidden>
 <div class="page-title">
@@ -248,6 +260,13 @@
 </div>
 <div id="provider-cards" class="stack">
 </div>
+<form id="advanced-settings" class="card"><h2>Practice and spending controls</h2>
+<div class="checks"><label><input type="checkbox" name="additionalChecks"> Check generated boundary inputs with LeetCode</label><label><input type="checkbox" name="adaptivePractice"> Prefer weak topics and spaced revision</label></div>
+<div class="form-grid"><label>Tokens per session<input name="sessionTokenBudget" type="number" min="1000" max="1000000" required></label><label>AI calls per session<input name="maxSessionCalls" type="number" min="1" max="1000" required></label><label>Daily estimated USD limit (0 disables)<input name="dailyCostBudgetUSD" type="number" min="0" max="10000" step="0.01" required></label>
+<label>Groq input USD / million tokens<input name="groqInput" type="number" min="0" max="10000" step="any" placeholder="Unknown"></label><label>Groq output USD / million tokens<input name="groqOutput" type="number" min="0" max="10000" step="any" placeholder="Unknown"></label><label>Gemini input USD / million tokens<input name="geminiInput" type="number" min="0" max="10000" step="any" placeholder="Unknown"></label><label>Gemini output USD / million tokens<input name="geminiOutput" type="number" min="0" max="10000" step="any" placeholder="Unknown"></label></div>
+<p class="muted">Enter prices for the selected models. A daily cost limit requires known prices for the provider being called. Additional cases are generated suggestions; passing them cannot prove hidden-test correctness.</p><button class="primary">Save practice controls</button></form>
+<div class="card"><h2>Backups and diagnostics</h2><div class="checks"><button id="export-backup" type="button">Export settings and history</button><label>Restore a backup<input id="restore-file" type="file" accept=".json,application/json"></label><button id="restore-backup" type="button">Restore selected backup</button><button id="support-report" type="button">Export diagnostic report</button></div><p class="muted">Exports omit provider keys, login cookies and connection tokens. Restoring merges history, keeps current credentials and pauses Auto Mode. Diagnostic reports also omit account names, statements and source code.</p></div>
+<div class="card"><h2>Safe updates and rollback</h2><label>Release ZIP<input id="update-file" type="file" accept=".zip,application/zip"></label><button id="prepare-update" type="button">Check selected release</button><p id="update-plan">Select a release you trust. Compatibility is checked before installation. Updates restart the server and preserve runtime data.</p><button id="install-update" type="button" hidden>Install checked release</button><div class="checks"><button id="list-rollbacks" type="button">Load restore points</button><select id="rollback-id" aria-label="Restore point"></select><button id="rollback-update" type="button">Restore selected code version</button></div><p id="update-status" aria-live="polite"></p></div>
 <p id="provider-fallback" class="muted">No provider has generated a solution yet.</p>
 <form id="platform-form" class="card">
 <h2>Question platform</h2>
@@ -276,8 +295,12 @@
 <footer>Practice Ex. · Scheduled solving · Accepted results stay in history</footer>
 </main>
 <script src="connection.js"></script>
+<script src="practice-plan.js"></script>
+<script src="portable-data.js"></script>
+<script src="failure-guide.js"></script>
 <script src="practice-metrics.js"></script>
 <script src="app.js">
 </script>
+<script src="advanced.js"></script>
 </body>
 </html>

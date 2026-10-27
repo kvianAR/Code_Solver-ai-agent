@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.0
+
+- Browser self-check with real read-only permission, pairing, version and login probes; manual restart/offline/account-switch checks remain visibly separate.
+- Starter-signature checks and up to four model-suggested boundary inputs evaluated by LeetCode's checker. Generated expected outputs are not trusted.
+- Learning mode with separate hint, approach, code-review and full-solution requests. Learning never submits code.
+- Account-specific weak-topic recommendations and spaced revision, deduplicating archived copies and accepted carry-over tasks.
+- Per-provider/session token accounting, configurable session call limits and estimated USD budgets using user-entered model prices. Unknown and legacy costs cannot silently bypass an enabled cost limit.
+- Actionable failure classifications and a redacted diagnostic export.
+- Portable settings/history backups, validation before restore, duplicate-safe merge and automatic pause after restore. Existing credentials and their endpoints remain unchanged.
+- Checked local release ZIP installation, compatibility checks, private restore points, automatic recovery after an install failure and code rollback that preserves current runtime history and keys.
+
+Real Chrome profile tests require the built-in browser check and the manual matrix in docs/browser-test-plan.md. Provider prices are estimates, not billing data. Changes do not prove hidden-test correctness.
+
 ## 2.9.0
 
 - Automatic local pairing for an unpacked extension loaded from the running checkout. Manual cloud connection remains available.

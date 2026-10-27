@@ -1,6 +1,9 @@
 import {LeetCodeRunner, archiveRetryableAutomaticRun, automaticRetryDecision, dailyRunForAccount, latestArchivedAutomaticRun, localClock, loginPrecheckDue, shouldRetryForLaterSchedule} from './leetcode-runner.js';
 import {activeContest,contestRefreshDue} from './contest-calendar.js';
 import './connection.js';
+import './practice-plan.js';
+import './failure-guide.js';
+import './self-check.js';
 async function notify(id,title,message){await chrome.notifications.create(id,{type:'basic',iconUrl:'icon.png',title,message:String(message).slice(0,400)});}
 async function serverApi(connection,route,body,signal){const response=await fetch(connection.url+'/api/'+route,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(120000)]):AbortSignal.timeout(120000)});const value=await response.json().catch(()=>({}));if(!response.ok)throw Error(value.error||`Agent request failed (${response.status})`);return value;}
 async function waitForTab(tabId){const current=await chrome.tabs.get(tabId);if(current.status==='complete')return;await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{chrome.tabs.onUpdated.removeListener(listener);reject(Error('LeetCode page load timed out'));},30000);const listener=(id,info)=>{if(id===tabId&&info.status==='complete'){clearTimeout(timer);chrome.tabs.onUpdated.removeListener(listener);resolve();}};chrome.tabs.onUpdated.addListener(listener);});}
@@ -96,20 +99,21 @@ const runner=new LeetCodeRunner({
     return response.value;
   },
   discover:async options=>{
+    if(options.adaptivePractice&&globalThis.practicePlanner){const {leetcodeRuns={}}=await chrome.storage.local.get('leetcodeRuns');const profile=practicePlanner.profile(leetcodeRuns,options.username,localClock(options.timezone||'Asia/Kolkata').date);options={...options,reviewSlugs:profile.due.map(row=>row.slug).slice(0,10),weakTopics:profile.weakTopics};}
     const response=await leetcodeMessage({type:'leetcode-discover',options},()=>false,true);
     if(!response?.ok)throw Error(response?.error||'Could not read LeetCode');
     return response.value;
   },
-  solve:async(problem,feedback,signal,avoidProvider='')=>{
+  solve:async(problem,feedback,signal,avoidProvider='',sessionId='')=>{
     await requirePracticeWindow();
     const {connection}=await chrome.storage.local.get('connection');
     if(!connection)throw Error('Connect the extension to the agent first');
-    return serverApi(connection,'leetcode/solve',{problem,feedback,avoidProvider},signal);
+    return serverApi(connection,'leetcode/solve',{problem,feedback,avoidProvider,sessionId},signal);
   },
-  verify:async(_problem,code,signal)=>{
+  verify:async(problem,code,signal)=>{
     const {connection}=await chrome.storage.local.get('connection');
     if(!connection)throw Error('Connect the extension to the agent first');
-    return serverApi(connection,'leetcode/verify',{code},signal);
+    return serverApi(connection,'leetcode/verify',{code,starterCode:problem.starterCode},signal);
   },
   preflight:async(problem,code,username,signal)=>{
     await requirePracticeWindow();
@@ -273,6 +277,29 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(sender.id!==chrome.runtime.id || sender.tab && !sender.url?.startsWith(chrome.runtime.getURL('')))return;
   if(message.type==='connect-local-agent'){
     (async()=>{await chrome.storage.local.set({autoConnectDisabled:false});const connection=await agentConnection.autoConnect();return {ok:true,connected:!!connection};})().then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));return true;
+  }
+  if(message.type==='extension-self-check'){
+    (async()=>{
+      if(runner.active)throw Error('Finish the current session before checking the browser');
+      const report=await extensionSelfCheck.run({version:chrome.runtime.getManifest().version,
+        permission:()=>chrome.permissions.contains({origins:['http://localhost/*','http://127.0.0.1/*']}),
+        connect:async()=>{const connection=await agentConnection.autoConnect();if(!connection)throw Error('connection unavailable');},
+        state:async()=>{const {connection}=await chrome.storage.local.get('connection');return serverApi(connection,'state');},
+        session:()=>currentAccount(true)});
+      await closeAgentLeetCodeTab();await chrome.storage.local.set({extensionSelfCheck:report});return {ok:true,report};
+    })().then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));return true;
+  }
+  if(message.type==='learning-current-question'){
+    (async()=>{
+      if(runner.active)throw Error('Finish the current session before opening learning mode');
+      await requirePracticeWindow();let [tab]=await chrome.tabs.query({active:true,currentWindow:true});
+      if(!tab?.url?.startsWith('https://leetcode.com/problems/'))tab=(await chrome.tabs.query({url:'https://leetcode.com/problems/*'})).sort((a,b)=>(b.lastAccessed||0)-(a.lastAccessed||0))[0];
+      let slug=tab?.url?.match(/^https:\/\/leetcode\.com\/problems\/([a-z0-9-]+)(?:\/|$)/)?.[1];
+      if(!slug)throw Error('Open a LeetCode question tab, then use Load current question');
+      const {connection}=await chrome.storage.local.get('connection'),state=await serverApi(connection,'state');
+      const response=await sendLeetCodeMessage(tab,{type:'leetcode-discover',options:{requestedSlug:slug,language:state.config.language}},()=>false);
+      if(!response?.ok)throw Error(response?.error||'Could not load the question');await chrome.storage.local.set({learningProblem:response.value.questions[0]});return {ok:true,problem:response.value.questions[0]};
+    })().then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));return true;
   }
   if(message.type==='recover-leetcode-results'){
     (async()=>{await ready;if(runner.active)throw Error('Wait for the current session to finish');await runner.recover(true);await closeAgentLeetCodeTab();return {ok:true};})().then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));return true;

@@ -19,7 +19,7 @@ export class Store {
       leetcode:{...DEFAULT.leetcode,...this.state.config?.leetcode}};
     this.state.configSourceHash=sourceHash;
     if (process.env.ADMIN_TOKEN) this.state.adminToken=process.env.ADMIN_TOKEN;
-    validateConfig(this.state.config);
+    this.state.config=validateConfig(this.state.config);
     this.save();
   }
   save() { fs.writeFileSync(this.file+'.tmp',JSON.stringify(this.state,null,2),{mode:0o600}); fs.renameSync(this.file+'.tmp',this.file); }

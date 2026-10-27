@@ -34,12 +34,13 @@ async function refresh(){
   const slug=slugFromTab(tab);
   $('#question').textContent=slug?titleFromSlug(slug):'Open a LeetCode question tab to solve it here.';
   $('#tab-kind').textContent=slug?'Ready':'No question';
-  $('#solve').disabled=busy||!!live?.activeId||!slug||!connection;
+  $('#solve').disabled=busy||!!live?.activeId||!slug||!connection;$('#learn').disabled=busy||!!live?.activeId||!slug||!connection;
   $('#stop').hidden=!live?.activeId;
   if(!connection)setMessage('Start Practice Ex. on this Mac. Automatic connection retries every minute; open the dashboard to connect now.');
 }
 $('#solve').addEventListener('click',async()=>{busy=true;$('#solve').disabled=true;setMessage('Starting this question…',true);try{const result=await chrome.runtime.sendMessage({type:'solve-current-question'});if(!result?.ok)throw Error(result?.error||'Could not start');if(!result.started)throw Error(result.reason||'A session is already running');setMessage('Started. Progress appears here and in the dashboard.',true);}catch(error){setMessage(error.message);}finally{busy=false;await refresh();}});
 $('#stop').addEventListener('click',async()=>{const result=await chrome.runtime.sendMessage({type:'stop-leetcode'});setMessage(result?.stopped?'Stopping current run…':'No run is active.',!!result?.stopped);await refresh();});
+$('#learn').addEventListener('click',async()=>{try{const result=await chrome.runtime.sendMessage({type:'learning-current-question'});if(!result?.ok)throw Error(result?.error||'Could not load the question');await chrome.tabs.create({url:chrome.runtime.getURL('dashboard.html#learn')});}catch(error){setMessage(error.message);}});
 $('#dashboard').addEventListener('click',()=>chrome.tabs.create({url:chrome.runtime.getURL('dashboard.html')}));
 chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&(changes.connection||changes.leetcodeRuns||changes.lastState||changes.leetcodeAccount||changes.leetcodeSession||changes.dailyDiagnostic))refresh().catch(error=>setMessage(error.message));});
 refresh().catch(error=>setMessage(error.message));

@@ -486,3 +486,10 @@ test('changing the schedule does not silently replace drafts awaiting review',()
 test('retry times land on the scheduled minute without second drift',()=>{
   assert.equal(nextHourlyRetryAt(config,new Date('2026-09-29T04:41:47.123Z')),'2026-09-29T05:30:00.000Z');
 });
+
+test('additional generated cases go to the official preflight before any judged submission',async()=>{
+  let extra;
+  const {runner,calls}=fixture({solve:async()=>({code:'class Solution: pass',provider:'groq',testCases:[{input:'[1]\n2',reason:'boundary'}]}),preflight:async(problem)=>{extra=problem.additionalTestcases;return {ok:true};}});
+  runner.start({...config,additionalChecks:true},true,1,'Leetcoder071');await runner.done;
+  assert.equal(extra[0].input,'[1]\n2');assert.equal(calls.submitted.length,1);
+});

@@ -180,7 +180,7 @@ export class LeetCodeRunner {
       const discoverMore = async (count, preferQuestionOfTheDay) => {
         const requireQotd=!manual&&!run.tasks.some(t=>t.problem?.selection==='QOTD');
         const discovered = await this.io.discover({username: accountUsername, count,
-          enforceUsername: !!accountUsername,
+          enforceUsername: !!accountUsername, adaptivePractice:config.adaptivePractice,timezone:config.timezone,
           language: config.language, allowedDifficulties: config.allowedDifficulties,
           preferQuestionOfTheDay, requireQotd, selectionMode:manual?'roadmap':'random', requestedSlug,
           excludeSlugs:[...excludeSlugs], acceptedTodaySlugs:[...acceptedTodaySlugs], completedCount});
@@ -193,7 +193,7 @@ export class LeetCodeRunner {
           if (!problem?.titleSlug || run.tasks.some(task => task.problem.titleSlug === problem.titleSlug) ||
             fresh.some(item => item.titleSlug === problem.titleSlug)) continue;
           if (requestedSlug !== problem.titleSlug && excludeSlugs.has(problem.titleSlug) &&
-            !(problem.selection==='QOTD'&&(!manual||!acceptedTodaySlugs.has(problem.titleSlug)))) continue;
+            !(problem.selection==='QOTD'&&(!manual||!acceptedTodaySlugs.has(problem.titleSlug)))&&!(problem.selection==='REVISION'&&!acceptedTodaySlugs.has(problem.titleSlug))) continue;
           fresh.push(problem);
         }
         for (const problem of fresh.slice(0, run.target - run.tasks.length)) {
@@ -241,10 +241,10 @@ export class LeetCodeRunner {
             const rejectedCode=task.submittedCodeFingerprints.length?task.solution?.code:'';
             const feedback=rejectedCode?`${task.feedback}\nPreviously rejected code (do not repeat):\n${rejectedCode.slice(0,3000)}`:task.feedback;
             solution = await this.io.solve(task.problem, feedback, active.controller.signal,
-              task.attempts>1?task.provider:'');
+              task.attempts>1?task.provider:'',run.id);
             if (active.stop) return await this.finishStopped(run);
             task.provider = solution.provider;
-            task.solution = {code: solution.code, explanation: solution.explanation, complexity: solution.complexity};
+            task.solution = {code: solution.code, explanation: solution.explanation, complexity: solution.complexity,testCases:solution.testCases||[]};
           } catch (error) {
             if (active.stop) return await this.finishStopped(run);
             task.feedback = error.message;
@@ -271,8 +271,9 @@ export class LeetCodeRunner {
           task.status='testing';await this.io.save(run);
           try{
             task.preflightRuns=(task.preflightRuns||0)+1;
-            const checked=await this.io.preflight(task.problem,solution.code,run.username,active.controller.signal);
+            const checked=await this.io.preflight({...task.problem,additionalTestcases:config.additionalChecks?solution.testCases||[]:[]},solution.code,run.username,active.controller.signal);
             if(active.stop)return await this.finishStopped(run);
+            task.preflight={ok:!!checked?.ok,extraCases:checked?.extraCases||0};
             if(!checked?.ok){
               task.preflightFailures=(task.preflightFailures||0)+1;
               task.feedback=`Run Code failed: ${checked?.feedback||'LeetCode examples did not pass'}`;

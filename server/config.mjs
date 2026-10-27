@@ -5,6 +5,13 @@ export function validateConfig(input) {
   c.reviewBeforeSubmit ??= false;
   c.automaticRetryMinutes ??= 60;
   c.groqBaseUrl ??= 'https://api.groq.com/openai/v1';
+  c.additionalChecks ??= true;c.adaptivePractice ??= true;
+  c.sessionTokenBudget ??= 100000;c.maxSessionCalls ??= 32;c.dailyCostBudgetUSD ??= 0;
+  c.providerPricing ??= {groq:null,gemini:null};
+  if(typeof c.additionalChecks!=='boolean'||typeof c.adaptivePractice!=='boolean')throw Error('Invalid practice controls');
+  if(!Number.isInteger(c.sessionTokenBudget)||c.sessionTokenBudget<1000||c.sessionTokenBudget>1000000||!Number.isInteger(c.maxSessionCalls)||c.maxSessionCalls<1||c.maxSessionCalls>1000)throw Error('Invalid session budget');
+  if(!Number.isFinite(c.dailyCostBudgetUSD)||c.dailyCostBudgetUSD<0||c.dailyCostBudgetUSD>10000)throw Error('Invalid cost budget');
+  for(const p of ['groq','gemini'])if(c.providerPricing[p]!==null&&c.providerPricing[p]!==undefined){const rate=c.providerPricing[p];if(!rate||!['inputPerMillion','outputPerMillion'].every(k=>Number.isFinite(rate[k])&&rate[k]>=0&&rate[k]<=10000))throw Error('Enter valid input and output prices');}
   if(typeof c.reviewBeforeSubmit!=='boolean')throw Error('Invalid review setting');
   if(!Number.isInteger(c.automaticRetryMinutes)||c.automaticRetryMinutes<15||c.automaticRetryMinutes>240)throw Error('Retry interval must be 15–240 minutes');
   const base=new URL(c.groqBaseUrl);

@@ -1,3 +1,4 @@
+import {reserveUsage} from './usage.mjs';
 import crypto from 'node:crypto';
 import {localTime,monday} from './time.mjs';
 import {buildPlan,selectDaily} from './planner.mjs';
@@ -96,16 +97,15 @@ export class Agent {
       const provider=this.chooseProvider();
       if(!provider){task.status='blocked';task.feedback='No working API key. Add or reconnect a provider.';return 'blocked';}
       const prompt=solutionPrompt(task.problem,c.language,task.feedback,c.ownedSolutionStyle);
-      const date=localTime(this.now(),c.timezone).date, reserve=Math.ceil(prompt.length/3)+c.maxOutputTokens;
-      const usage=this.store.state.usage[date] ||= {tokens:0,calls:0};
-      if(usage.tokens+reserve>c.dailyTokenBudget){task.status='blocked';task.feedback='Daily token budget reached';return 'blocked';}
-      usage.tokens+=reserve;usage.calls++;task.attempts++;task.status='solving';task.provider=provider;this.store.save();
+      const date=localTime(this.now(),c.timezone).date;
+      let reservation;try{reservation=reserveUsage(this.store,date,provider,job.id,prompt,c.maxOutputTokens);}catch(error){task.status='blocked';task.feedback=error.message;return 'blocked';}
+      task.attempts++;task.status='solving';task.provider=provider;this.store.save();
       let waitSeconds=Math.min(c.maxRetrySeconds,c.retryBaseSeconds*2**(task.attempts-1));
       try {
         const result=await this.complete(provider,this.store.secret(provider),c.models[provider],prompt,c);
         this.store.state.providerActivity={provider,fallbackFrom:provider!==c.providerOrder[0]?c.providerOrder[0]:null,at:this.now().toISOString()};
         this.store.providerResult(provider,'working');
-        if(Number.isFinite(result.tokens)&&result.tokens>=0) usage.tokens=Math.max(0,usage.tokens-reserve+result.tokens);
+        reservation.settle(result);
         this.store.save();
         const solution=decodeSolution(result.text);
         task.solution=solution;

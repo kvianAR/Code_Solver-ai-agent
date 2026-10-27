@@ -283,6 +283,36 @@ docker compose up -d --build
 
 Set `leetcode.enabled` to `false` to use that sandbox workflow. Its generated code executes in restricted containers. The Compose configuration mounts the Docker socket; use it only on a machine you control. The Docker server image does not include Python 3 for live draft syntax checks; add it before using that feature in Docker.
 
+## Learning, budgets and adaptive practice
+
+Open a LeetCode question, use **Learn with hints** in the popup, then continue in Learning mode. Hint, approach, review of your own code and full solution are separate explicit provider requests. They consume the same daily/session budgets as solution generation and never send judged submissions. Treat AI advice as fallible; code review does not claim to have executed your attempt.
+
+With **Check generated boundary inputs** enabled, the generator can supply up to four small valid custom inputs. They are appended to the official example run and checked by LeetCode. The generator's guessed expected answers are not used. Missing or invalid cases are not evidence of correctness; all hidden tests still belong to the official judge. Starter-signature checks parse code without executing it.
+
+Adaptive practice uses recorded AI-assisted outcomes per LeetCode account. It identifies topics with rejected submissions or example failures and schedules accepted questions for revision after 1, 3, 7, 14 and 30 days. Unresolved algorithm failures become due the next day. It selects at most one due revision alongside QOTD; the remaining selection prefers untouched questions. Archived task copies are deduplicated. These statistics do not measure the user's independent skill.
+
+In **Practice and spending controls**, set session tokens/calls and optional daily estimated USD limits. Enter input/output USD prices per million tokens for your selected models. Changing a model or Groq endpoint clears its price estimate. Price fields default to unknown; zero is allowed only when deliberately entered. Failed or unreported requests retain conservative maximum reservations. Legacy or unpriced calls make a dollar cap unreliable, so an enabled cost cap blocks further calls until the next day or until it is disabled in favor of token limits. This is not a remaining-balance or billing integration.
+
+## Backups, diagnostics and safe updates
+
+**Export settings and history** downloads a portable JSON backup. In the extension it includes that browser's run history; the web dashboard can export only server-owned history. Provider keys, pairing/connection credentials, cookies and webhook secrets are excluded. Restoring validates first, merges history without overwriting current run IDs, keeps current credentials and their endpoints, and pauses Auto Mode. Imported active runs are stopped. The server saves a private pre-restore recovery snapshot under `data/restore-backups/`.
+
+**Export diagnostic report** omits account names, problem statements, source code, credentials and raw error text. It includes versions, check outcomes and fixed failure classifications. Review any report before choosing to share it.
+
+For a code update, select a trusted release ZIP under **Safe updates and rollback**, use **Check selected release**, then explicitly select **Install checked release**. Finish active sessions first. The updater checks archive paths, file types, expanded size, package/extension version agreement, Node compatibility and API version before changing code. It creates a private restore point under `data/update-backups/`, restarts the local server, and restores old code if replacement/startup fails. Current runtime data is kept during code rollback. Reload the unpacked extension after an update or rollback; Chrome does not hot-reload its worker.
+
+Command-line equivalents:
+
+```bash
+npm run update -- --archive /absolute/path/practice-ex-release.zip
+npm run update -- --list
+npm run rollback -- RESTORE_POINT_ID
+```
+
+The in-app updater is local-only and requires the default project data directory. A rollback to a legacy release can also remove that release's newer updater UI; reinstall the newer release from its trusted package when upgrading again. Private restore points include encrypted state and the local vault key and must stay on your machine. They are never included in release packages.
+
+Use **Check this browser** for actual Chrome probes and [the browser test matrix](docs/browser-test-plan.md) for restart/account/offline scenarios. A passing automated suite is not a real-profile test.
+
 ## Data and privacy
 
 - Groq/Gemini keys are encrypted with AES-256-GCM in local `data/state.json`.
