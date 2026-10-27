@@ -23,7 +23,11 @@ async function checkSetup(){
 async function autoConnect(){
   if(!extension){$('#auto-connect-status').textContent='Open the Practice Ex. extension for automatic connection. Manual server connection is available below.';return;}
   $('#auto-connect-status').textContent='Connecting to the agent on this Mac…';
-  try{const result=await chrome.runtime.sendMessage({type:'connect-local-agent'});if(!result?.ok||!result.connected)throw Error(result?.error||'Start Practice Ex.command, then try again');connection=await loadConnection();await refresh();await checkSetup();}
+  try{
+    const allowed=await chrome.permissions.request({origins:['http://localhost/*','http://127.0.0.1/*']});
+    if(!allowed)throw Error('Allow Practice Ex. to access its local server, then try again');
+    const result=await chrome.runtime.sendMessage({type:'connect-local-agent'});if(!result?.ok||!result.connected)throw Error(result?.error||'Start Practice Ex.command, then try again');connection=await loadConnection();await refresh();await checkSetup();
+  }
   catch(error){$('#auto-connect-status').textContent=error.message;}
 }
 function toast(message){$('#toast').textContent=message;$('#toast').hidden=false;clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').hidden=true,6000);}
