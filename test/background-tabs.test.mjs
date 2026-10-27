@@ -1,0 +1,84 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {runInNewContext} from 'node:vm';
+
+const source=readFileSync(new URL('../extension/background.js',import.meta.url),'utf8')
+  .replace(/^import .*?;\n/gm,'');
+
+async function runPoll(due,precheck=false,sessionResponse={ok:true,value:{signedIn:true,username:'TestUser'}}){
+  const tabs=[],created=[],removed=[],notifications=[],started=[],saved={connection:{url:'http://127.0.0.1:8787',token:'test'},
+    leetcodeRuns:{},leetcodeAccount:'TestUser',contestCalendarVersion:2,
+    contestCalendarUpdatedAt:Date.now(),leetcodeContests:[]};
+  const config={autoMode:true,dailyStartTime:due?'00:00':'23:59',timezone:'Asia/Kolkata',
+    dailyQuestionCount:2,leetcode:{enabled:true}};
+  const state={config,notifications:[],jobs:[],today:'2026-10-06'};
+  const chrome={
+    storage:{local:{
+      async get(keys){if(typeof keys==='string')return {[keys]:saved[keys]};
+        if(Array.isArray(keys))return Object.fromEntries(keys.map(key=>[key,saved[key]]));
+        return Object.fromEntries(Object.entries(keys).map(([key,value])=>[key,saved[key]??value]));},
+      async set(value){Object.assign(saved,value);},async remove(key){delete saved[key];},
+      async setAccessLevel(){} }},
+    alarms:{async create(){},onAlarm:{addListener(){}}},
+    notifications:{async create(id,details){notifications.push({id,...details});},onClicked:{addListener(){}}},
+    runtime:{id:'test-extension',onInstalled:{addListener(){}},onStartup:{addListener(){}},
+      onMessage:{addListener(){}},getURL:path=>`chrome-extension://test/${path}`},
+    tabs:{async query(){return [...tabs];},async create(options){const tab={id:7,url:options.url,status:'complete'};
+      tabs.push(tab);created.push(tab);return tab;},async get(id){const tab=tabs.find(tab=>tab.id===id);
+      if(!tab)throw Error('Tab gone');return tab;},async remove(id){removed.push(id);tabs.splice(tabs.findIndex(tab=>tab.id===id),1);},
+      onUpdated:{addListener(){},removeListener(){}},async sendMessage(){return sessionResponse;}},
+    action:{async setBadgeText(){},async setBadgeBackgroundColor(){}},
+    scripting:{async executeScript(){}}
+  };
+  class Runner{
+    constructor(){this.active=null;}
+    async recover(){}
+    start(){started.push(true);this.done=Promise.resolve();return {started:true,id:'automatic:2026-10-06:testuser'};}
+  }
+  runInNewContext(source,{chrome,LeetCodeRunner:Runner,activeContest:()=>null,contestRefreshDue:()=>false,
+    localClock:()=>({date:'2026-10-06',time:'12:00'}),dailyRunForAccount:()=>null,
+    latestArchivedAutomaticRun:()=>null,automaticRetryDecision:()=>({due}),loginPrecheckDue:()=>precheck,
+    archiveRetryableAutomaticRun:()=>false,shouldRetryForLaterSchedule:()=>false,
+    fetch:async()=>({ok:true,json:async()=>state}),Date,crypto:{randomUUID:()=>''},
+    setInterval(){},setTimeout,clearTimeout,AbortSignal,URL});
+  for(let i=0;i<20&&!saved.lastPollAt;i++)await new Promise(resolve=>setImmediate(resolve));
+  for(let i=0;i<5;i++)await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(saved.lastPollAt,'background poll finished');
+  return {created,removed,tabs,saved,notifications,started};
+}
+
+test('idle scheduler does not open LeetCode; a due run closes its temporary tab',async()=>{
+  const idle=await runPoll(false);
+  assert.equal(idle.created.length,0);
+  const due=await runPoll(true);
+  assert.equal(due.created.length,1);
+  assert.deepEqual(due.removed,[7]);
+  assert.equal(due.tabs.length,0);
+});
+
+test('early login check closes its temporary tab before the scheduled run',async()=>{
+  const checked=await runPoll(false,true);
+  assert.equal(checked.created.length,1);
+  assert.deepEqual(checked.removed,[7]);
+  assert.equal(checked.tabs.length,0);
+});
+
+test('temporary session check failure does not claim logout or start an unverified run',async()=>{
+  const checked=await runPoll(true,false,{ok:false,error:'LeetCode connection failed (503)'});
+  assert.equal(checked.saved.leetcodeAccount,'TestUser');
+  assert.equal(checked.saved.leetcodeSession.status,'unavailable');
+  assert.equal(checked.saved.dailyDiagnostic.kind,'connection');
+  assert.equal(checked.started.length,0);
+  assert.equal(checked.notifications.some(n=>n.id==='leetcode-login'),false);
+  assert.deepEqual(checked.removed,[7]);
+});
+
+test('confirmed sign-out clears the account and asks for login once',async()=>{
+  const checked=await runPoll(true,false,{ok:true,value:{signedIn:false,username:''}});
+  assert.equal(checked.saved.leetcodeAccount,'');
+  assert.equal(checked.saved.leetcodeSession.status,'signed-out');
+  assert.equal(checked.saved.dailyDiagnostic.kind,'login');
+  assert.equal(checked.started.length,0);
+  assert.equal(checked.notifications.filter(n=>n.id==='leetcode-login').length,1);
+});

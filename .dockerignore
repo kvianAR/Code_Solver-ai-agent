@@ -1,0 +1,8 @@
+data
+extension/local-connection.json*
+releases
+test
+node_modules
+.git
+.env
+*.log

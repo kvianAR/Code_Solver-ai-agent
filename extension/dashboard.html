@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Practice Ex.</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<aside>
+<a class="brand" href="#today">
+<span class="logo">S</span>
+<span>Practice Ex.<small>YOUR PRACTICE AUTOPILOT</small>
+</span>
+</a>
+<nav>
+<button data-page="today" class="active">◉ &nbsp; Today</button>
+<button data-page="plan">▦ &nbsp; Two-week plan</button>
+<button data-page="contests">⚑ &nbsp; LeetCode contests</button>
+<button data-page="history">↗ &nbsp; Solution history</button>
+<button data-page="settings">⚙ &nbsp; Settings & keys</button>
+</nav>
+<div class="aside-foot">
+<span id="connection-dot" class="dot">
+</span>
+<span id="connection-status">Not connected</span>
+<small>Automatic and manual practice.<br>Contest timetable from LeetCode.</small>
+</div>
+</aside>
+<main>
+<header>
+<span id="breadcrumb">WORKSPACE / TODAY</span>
+<button id="refresh" class="quiet">↻ Refresh</button>
+</header>
+<div id="toast" role="status" hidden>
+</div>
+<section id="connect-panel" class="card connect">
+<div>
+<span class="eyebrow">ONE-TIME SETUP</span>
+<h2>Connect your agent</h2>
+<p id="auto-connect-status">Finding the local agent… Start Practice Ex. on this Mac; the extension connects automatically.</p>
+<button id="auto-connect" type="button" class="primary">Connect automatically</button>
+</div>
+<details><summary>Advanced: connect another server manually</summary>
+<form id="connect-form">
+<label>Server URL<input id="server-url" type="url" value="http://localhost:8787" required>
+</label>
+<label>Connection token<input id="connection-token" type="password" autocomplete="off" required>
+</label>
+<button class="primary">Connect</button>
+</form>
+</details>
+</section>
+<div id="workspace" hidden>
+<section class="card setup-checklist" aria-label="Setup checklist">
+<div class="task-head"><h2>Ready to practise?</h2><button id="check-setup" class="quiet" type="button">Check setup</button></div>
+<div id="setup-checks" class="checks">Checking connection…</div>
+<small id="version-status"></small>
+<button id="fix-setup" type="button" class="quiet">Open settings</button>
+</section>
+<section class="page" id="page-today">
+<div class="page-title">
+<div>
+<span class="eyebrow" id="today-date">TODAY</span>
+<h1>Keep the momentum.</h1>
+<p>Daily questions, generated and submitted on your signed-in account.</p>
+</div>
+<div class="session-controls">
+<label class="manual-count">Manual questions<input id="manual-count" type="number" min="1" max="100" value="2" inputmode="numeric"></label>
+<button id="run-now" class="primary">▶ Prepare 2 now</button>
+<button id="stop-solving" class="quiet" disabled>■ Stop</button>
+</div>
+</div>
+<div class="stats">
+<article class="card">
+<span>Today's automatic progress</span>
+<strong id="daily-count">0 / 2</strong>
+<small id="daily-status">Scheduled</small>
+<small id="next-daily-target" hidden></small>
+</article>
+<article class="card">
+<span>Accepted streak</span>
+<strong id="streak">0 <em>days</em>
+</strong>
+<small>Days with all selected questions accepted by LeetCode.</small>
+</article>
+<article class="card">
+<span>Daily start</span>
+<strong id="start-time">10:00 <em>AM</em>
+</strong>
+<small id="timezone-label">Asia/Kolkata</small>
+</article>
+<article class="card">
+<span>Tokens today</span>
+<strong id="token-count">0</strong>
+<small id="token-budget">Budget</small>
+</article>
+</div>
+<div class="card" style="margin-top:16px">
+<strong>Submission accuracy</strong>
+<p id="accuracy-summary">Accuracy metrics start with the next session.</p>
+<small id="provider-outcomes"></small>
+</div>
+<div class="card session-panel">
+<strong id="live-session-status">Practice preparation</strong>
+<p id="live-session-help">The agent generates, checks, submits, and retries solutions on the signed-in LeetCode account.</p>
+<progress id="session-progress" max="1" value="0" aria-label="Session progress"></progress>
+<small id="session-step"></small>
+</div>
+<div class="card diagnosis-panel">
+<strong>Why didn’t it run?</strong>
+<p id="daily-diagnosis">Checking today’s schedule…</p>
+<small id="next-retry"></small>
+<button id="recover-results" type="button" class="quiet" hidden>Check pending submission results</button>
+</div>
+<div class="section-label">
+<h2>Automatic daily questions</h2>
+<span id="auto-label" class="pill">Auto mode</span>
+<button id="retry-daily" type="button" class="quiet" hidden>↻ Retry today's drafts</button>
+</div>
+<div id="today-tasks" class="task-grid">
+</div>
+<div id="manual-section" hidden>
+<div class="section-label">
+<h2>Latest manual session</h2>
+<span id="manual-status" class="pill">
+</span>
+</div>
+<div id="manual-tasks" class="task-grid">
+</div>
+</div>
+<div class="section-label">
+<h2>Activity & notifications</h2>
+<span class="muted">Failures stay visible until resolved</span>
+</div>
+<div id="notifications" class="card list">
+</div>
+</section>
+<section class="page" id="page-plan" hidden>
+<div class="page-title">
+<div>
+<span class="eyebrow">ROLLING 14-DAY ROADMAP</span>
+<h1>A plan that moves with you.</h1>
+<p>Refreshed every Monday. QOTD is selected on the day.</p>
+</div>
+<button id="refresh-plan" class="primary">Refresh plan</button>
+</div>
+<div id="plan-days" class="plan-grid">
+</div>
+</section>
+<section class="page" id="page-contests" hidden>
+<div class="page-title">
+<div>
+<span class="eyebrow">LIVE LEETCODE CALENDAR</span>
+<h1>Contest timetable.</h1>
+<p>Upcoming contests and recently ended contests come from LeetCode. The extension opens the contest page once when the event starts, or when the browser resumes during the event.</p>
+<p>Live rated contests are for your own solutions. AI practice pauses during the contest and resumes afterward.</p>
+</div>
+<button id="refresh-contests" class="primary">↻ Refresh contests</button>
+</div>
+<div id="auto-contest-summary" class="card">
+</div>
+<div id="contest-list" class="stack">
+</div>
+</section>
+<section class="page" id="page-history" hidden>
+<div class="page-title">
+<div>
+<span class="eyebrow">ACCEPTED RESULTS & ATTEMPTS</span>
+<h1>Every session, accounted for.</h1>
+<p>AI-assisted practice results from your connected test platform.</p>
+</div>
+</div>
+<div class="card form-grid" id="history-filters">
+<label>Account<input id="history-account" type="search" placeholder="All accounts"></label>
+<label>Date<input id="history-date" type="date"></label>
+<label>Status<select id="history-status"><option value="">All statuses</option><option value="completed">Completed</option><option value="review">Ready for review</option><option value="running">Running</option><option value="failed">Failed</option><option value="blocked">Blocked</option><option value="interrupted">Interrupted</option><option value="stopped">Stopped</option></select></label>
+</div>
+<div id="history" class="stack">
+</div>
+</section>
+<section class="page" id="page-settings" hidden>
+<div class="page-title">
+<div>
+<span class="eyebrow">YOUR AGENT, YOUR SETTINGS</span>
+<h1>Make it work your way.</h1>
+<p>Changes are also editable in config.json for a fresh installation.</p>
+</div>
+</div>
+<form id="settings-form" class="card">
+<h2>Daily schedule & solving</h2>
+<div class="form-grid">
+<label>Start time<input name="dailyStartTime" type="time" required>
+</label>
+<label>Timezone<input name="timezone" value="Asia/Kolkata" required>
+</label>
+<label>Questions / day<input name="dailyQuestionCount" type="number" min="1" max="10" required>
+</label>
+<label>Browser for background wake<select name="backgroundBrowser">
+<option value="chrome">Google Chrome</option>
+<option value="brave">Brave</option>
+</select>
+</label>
+<label>Language<select name="language">
+<option value="python">Python</option>
+<option value="javascript">JavaScript</option>
+</select>
+</label>
+<label>Max AI drafts per question<input name="maxAttempts" type="number" min="1" max="8" required>
+</label>
+<label>Retry interval (minutes)<input name="automaticRetryMinutes" type="number" min="15" max="240" value="60" required></label>
+<label>Daily token budget<input name="dailyTokenBudget" type="number" min="1000" max="1000000" required>
+</label>
+<label>Provider order<select name="providerOrder">
+<option value="groq,gemini">Groq → Gemini</option>
+<option value="gemini,groq">Gemini → Groq</option>
+</select>
+</label>
+<label>Groq endpoint<input name="groqBaseUrl" type="url" value="https://api.groq.com/openai/v1" required><small>Use the default for direct Groq. A local proxy can use http://127.0.0.1:3011/v1.</small></label>
+<label>Notification webhook (optional)<input name="notificationWebhook" type="url" placeholder="https://your-notification-service/... ">
+</label>
+</div>
+<div class="checks">
+<label>
+<input name="autoMode" type="checkbox"> Run automatically at the selected time</label>
+<label><input name="reviewBeforeSubmit" type="checkbox"> Prepare drafts for review; I will submit them myself on LeetCode</label>
+<label>
+<input name="preferQuestionOfTheDay" type="checkbox" checked disabled> Automatic daily run requires QOTD; the remaining question is random</label>
+</div>
+<div class="checks">
+<span>Allowed difficulties:</span>
+<label>
+<input name="Easy" type="checkbox"> Easy</label>
+<label>
+<input name="Medium" type="checkbox"> Medium</label>
+<label>
+<input name="Hard" type="checkbox"> Hard</label>
+</div>
+<button class="primary">Save settings</button>
+<p class="muted">Question count applies to automatic sessions. Manual Prepare uses the custom count on the Today page (1–100). Solutions are submitted on the currently signed-in LeetCode account. To protect accuracy, each question gets at most two judged submissions per day; repeated code and uncertain submissions pause for review.</p>
+</form>
+<div class="card">
+<h2>Run while this Mac is sleeping</h2>
+<p>For automatic connection and login startup, double-click <strong>Start Practice Ex.command</strong> in the project folder. This setup does not need an administrator password.</p>
+<p>macOS setup wakes the computer five minutes before daily practice, each needed retry, and official contests. Keep the browser with Practice Ex. open before sleep. Reinstall the helper only when its code changes.</p>
+<pre>npm run background:install</pre>
+<small>This requires the Mac administrator password. It wakes from sleep; it cannot run while fully powered off.</small>
+</div>
+<div id="provider-cards" class="stack">
+</div>
+<p id="provider-fallback" class="muted">No provider has generated a solution yet.</p>
+<form id="platform-form" class="card">
+<h2>Question platform</h2>
+<p>Built-in sandbox includes a foundations-to-advanced roadmap. Connect your own API for real daily questions and contests.</p>
+<div class="form-grid">
+<label>Platform<select name="type">
+<option value="sandbox">Built-in test sandbox</option>
+<option value="http">My test platform API</option>
+</select>
+</label>
+<label>Solution style for owned tests<select name="ownedSolutionStyle">
+<option value="natural">Natural explanation &amp; readable code</option>
+<option value="direct">Concise explanation &amp; code</option>
+</select>
+</label>
+<label>API base URL<input name="baseUrl" placeholder="https://my-platform.example/api">
+</label>
+<label>Platform API key (optional)<input name="key" type="password" autocomplete="off" placeholder="Leave blank to keep existing key">
+</label>
+</div>
+<button class="primary">Save platform</button>
+</form>
+<button id="disconnect" class="quiet">Disconnect this browser</button>
+</section>
+</div>
+<footer>Practice Ex. · Scheduled solving · Accepted results stay in history</footer>
+</main>
+<script src="connection.js"></script>
+<script src="practice-metrics.js"></script>
+<script src="app.js">
+</script>
+</body>
+</html>
