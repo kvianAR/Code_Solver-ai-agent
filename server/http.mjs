@@ -5,7 +5,7 @@ import {validateConfig} from './config.mjs';
 import {localTime} from './time.mjs';
 import {buildPlan} from './planner.mjs';
 import {publicProblem} from './catalog.mjs';
-import {complete,decodeSolution,leetcodeSolutionPrompt,listModels,learningPrompt} from './providers.mjs';
+import {ProviderError,complete,decodeSolution,leetcodeSolutionPrompt,listModels,learningPrompt} from './providers.mjs';
 import {diagnostics,SERVER_VERSION} from './diagnostics.mjs';
 import {refreshOfficialContests} from './contest-calendar.mjs';
 import {activeContest} from '../extension/contest-calendar.js';
@@ -15,6 +15,9 @@ import {verifyDraft} from './verification.mjs';
 import {exportBackup,restoreBackup,supportReport} from './backup.mjs';
 import {prepareRelease,listSnapshots,launchUpdate} from './releases.mjs';
 import path from 'node:path';
+import {dailyProtection,recordDailyProgress,dailyReadiness} from './daily-readiness.mjs';
+import {providerOrder as generationProviders,providerAvailable,providerModel,cooldown,localModels} from './local-ai.mjs';
+import {recordAssistance,recordAttempt,recordMistakes,editMistake,startInterview,interview,reserveInterviewHint,releaseInterviewHint,finishInterview,saveInterviewDraft,studySummary,interviewPrompt,parseInterviewFeedback} from './study.mjs';
 function authorized(req,token) {const provided=(req.headers.authorization||'').replace(/^Bearer /,'');const a=Buffer.from(provided),b=Buffer.from(token);return a.length===b.length&&crypto.timingSafeEqual(a,b);}
 async function rawBody(req,limit=150000){const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>limit)throw Error('Request too large');chunks.push(chunk);}return Buffer.concat(chunks);}
 async function body(req,limit=150000){const data=(await rawBody(req,limit)).toString('utf8');return data?JSON.parse(data):{};}
@@ -28,9 +31,10 @@ export function createServer(store,platform,agent,options={}) {
       if(!allowPairing(req,options.pairingKey)){send(403,{error:'Local extension pairing required'});return;}
       send(200,{token:store.state.adminToken});return;
     }
-    const assets={'/':'dashboard.html','/app.js':'app.js','/connection.js':'connection.js','/practice-plan.js':'practice-plan.js','/portable-data.js':'portable-data.js','/failure-guide.js':'failure-guide.js','/advanced.js':'advanced.js','/practice-metrics.js':'practice-metrics.js','/style.css':'style.css'};
+    const assets={'/':'dashboard.html','/app.js':'app.js','/connection.js':'connection.js','/practice-plan.js':'practice-plan.js','/portable-data.js':'portable-data.js','/failure-guide.js':'failure-guide.js','/advanced.js':'advanced.js','/practice-plus.js':'practice-plus.js','/practice-metrics.js':'practice-metrics.js','/style.css':'style.css'};
     if(req.method==='GET'&&assets[url.pathname]){res.writeHead(200,{'Content-Type':url.pathname.endsWith('.js')?'text/javascript':url.pathname.endsWith('.css')?'text/css':'text/html','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});res.end(fs.readFileSync(new URL('../extension/'+assets[url.pathname],import.meta.url)));return;}
     if(!authorized(req,store.state.adminToken)){send(401,{error:'Connection token required'});return;}
+    let hintTicket=null;
     try {
       const route=`${req.method} ${url.pathname}`;
       if(route==='GET /api/state') {
@@ -38,13 +42,52 @@ export function createServer(store,platform,agent,options={}) {
         const state=structuredClone(store.publicState());
         state.jobs=state.jobs.map(j=>({...j,tasks:j.tasks.map(t=>({...t,problem:publicProblem(t.problem)}))}));
         state.today=localTime(new Date(),store.state.config.timezone).date;
-        state.serverVersion=SERVER_VERSION;state.apiVersion=1;
+        state.serverVersion=SERVER_VERSION;state.apiVersion=1;state.dailyProtection=dailyProtection(store,state.today);state.dailyReadiness=Object.values(store.state.dailyReadiness).sort((a,b)=>b.checkedAt.localeCompare(a.checkedAt))[0]||null;
         send(200,state);
+      }else if(route==='GET /api/readiness'){
+        const today=localTime(new Date(),store.state.config.timezone).date,tomorrow=new Date(Date.parse(today+'T00:00:00Z')+86400000).toISOString().slice(0,10),date=url.searchParams.get('date')||today;
+        if(![today,tomorrow].includes(date))throw Error('Readiness checks cover today or the next local day');
+        send(200,await dailyReadiness(store,date));
+      }else if(route==='POST /api/leetcode/daily-progress'){
+        recordDailyProgress(store,await body(req));send(200,{ok:true});
+      }else if(route==='GET /api/local-ai/models'){
+        send(200,{models:await localModels(store.state.config,store.secret('local'))});
+      }else if(route==='POST /api/local-ai/test'){
+        const c=store.state.config,date=localTime(new Date(),c.timezone).date;
+        if(!c.localAI.enabled||!c.localAI.model)throw Error('Save and enable an installed local model first');
+        const prompt=c.language==='python'?'Return only JSON with code: def solve(data): return data, explanation: identity, complexity: O(1)':'Return only JSON with code: function solve(data) { return data; }, explanation: identity, complexity: O(1)';
+        const reservation=reserveUsage(store,date,'local','local-test',prompt,256,{priority:'readiness'});
+        let generated=false;
+        try{
+          const result=await agent.complete('local',store.secret('local'),c.localAI.model,prompt,{...c,maxOutputTokens:256});generated=true;reservation.settle(result);
+          const solution=decodeSolution(result.text),checked=await verifyDraft(solution.code,'',c.language,c.judge);
+          if(!checked.ok)throw Error('Local structured output or syntax check failed');
+        }catch(error){
+          store.providerResult('local',generated?'request':error.kind||'temporary','Local capability check did not pass');
+          if(generated){store.state.disabledProviders.local={kind:'request',reason:'Local structured output or syntax check failed',since:new Date().toISOString()};store.save();}else cooldown(store,'local',error);
+          throw error;
+        }
+        delete store.state.disabledProviders.local;delete store.state.providerCooldowns.local;store.providerResult('local','working');
+        send(200,{ok:true,message:'Local JSON generation and syntax passed. Coding quality is not certified.'});
+      }else if(route==='GET /api/study'){
+        send(200,studySummary(store,url.searchParams.get('username')));
+      }else if(route==='POST /api/study/attempt'){
+        send(200,recordAttempt(store,await body(req),localTime(new Date(),store.state.config.timezone).date));
+      }else if(route==='POST /api/study/mistakes'){
+        send(200,recordMistakes(store,await body(req,4e6)));
+      }else if(route==='POST /api/study/note'){
+        send(200,editMistake(store,await body(req)));
+      }else if(route==='POST /api/interviews/start'){
+        send(200,startInterview(store,await body(req,2e6)));
+      }else if(route==='POST /api/interviews/finish'){
+        send(200,finishInterview(store,await body(req,500000)));
+      }else if(route==='POST /api/interviews/draft'){
+        send(200,saveInterviewDraft(store,await body(req,500000)));
       }else if(route==='GET /api/backup'){
         send(200,exportBackup(store));
       }else if(route==='POST /api/restore'){
         if(agent.running.size)throw Error('Finish active sessions before restoring');
-        send(200,restoreBackup(store,await body(req,20e6)));
+        send(200,restoreBackup(store,await body(req,50e6)));
       }else if(route==='GET /api/support-report'){
         send(200,supportReport(store,await diagnostics(store)));
       }else if(route==='GET /api/updates'){
@@ -69,13 +112,14 @@ export function createServer(store,platform,agent,options={}) {
       else if(route==='POST /api/config') {
         const input=await body(req);const old=store.state.config;
         if(agent.running.size&&(['language','platform'].some(k=>JSON.stringify(input[k]??old[k])!==JSON.stringify(old[k]))))throw Error('Pause and finish active work before changing language or platform');
-        store.state.config=validateConfig({...old,...input,models:{...old.models,...input.models},platform:{...old.platform,...input.platform},judge:{...old.judge,...input.judge},providerPricing:{...old.providerPricing,...input.providerPricing},leetcode:{...old.leetcode,...input.leetcode}});
-        for(const provider of ['groq','gemini'])if(input.models?.[provider]&&input.models[provider]!==old.models[provider]){delete store.state.disabledProviders[provider];delete store.state.providerHealth[provider];if(!input.providerPricing?.[provider])store.state.config.providerPricing[provider]=null;}
-        if(input.groqBaseUrl&&input.groqBaseUrl!==old.groqBaseUrl){delete store.state.disabledProviders.groq;delete store.state.providerHealth.groq;store.state.config.providerPricing.groq=null;}
-        store.save();
+        store.state.config=validateConfig({...old,...input,models:{...old.models,...input.models},platform:{...old.platform,...input.platform},judge:{...old.judge,...input.judge},providerPricing:{...old.providerPricing,...input.providerPricing},localAI:{...old.localAI,...input.localAI},leetcode:{...old.leetcode,...input.leetcode}});
+        for(const provider of ['groq','gemini'])if(input.models?.[provider]&&input.models[provider]!==old.models[provider]){delete store.state.disabledProviders[provider];delete store.state.providerHealth[provider];delete store.state.providerCooldowns[provider];if(!input.providerPricing?.[provider])store.state.config.providerPricing[provider]=null;}
+        if(input.groqBaseUrl&&input.groqBaseUrl!==old.groqBaseUrl){delete store.state.disabledProviders.groq;delete store.state.providerHealth.groq;delete store.state.providerCooldowns.groq;store.state.config.providerPricing.groq=null;}
+        if(input.localAI){delete store.state.disabledProviders.local;delete store.state.providerCooldowns.local;delete store.state.providerHealth.local;}
+        store.state.dailyReadiness={};store.save();
         await buildPlan(store,platform,localTime(new Date(),store.state.config.timezone).date);agent.resumeBlocked();send(200,{ok:true});
       }else if(route==='POST /api/keys') {
-        const {provider,key}=await body(req);if(!['groq','gemini','platform'].includes(provider))throw Error('Unknown provider');
+        const {provider,key}=await body(req);if(!['groq','gemini','platform','local'].includes(provider))throw Error('Unknown provider');
         if(typeof key!=='string'||key.length>1000)throw Error('Invalid key');
         store.setSecret(provider,key.trim());agent.resumeBlocked();send(200,{ok:true});
       }else if(route==='POST /api/provider-test') {
@@ -83,47 +127,52 @@ export function createServer(store,platform,agent,options={}) {
         if(!store.secret(provider))throw Error('Save a key first');
         // This explicit connection test is a paid API call and is counted against the budget.
         const c=store.state.config,d=localTime(new Date(),c.timezone).date;
-        const reservation=reserveUsage(store,d,provider,'provider-test:'+provider,'Return JSON {\"ok\":true}.',128);
+        const reservation=reserveUsage(store,d,provider,'provider-test:'+provider,'Return JSON {\"ok\":true}.',128,{priority:'readiness'});
         let r;
         try{r=await complete(provider,store.secret(provider),c.models[provider],'Return JSON {"ok":true}.',{...c,maxOutputTokens:128});}
         catch(e){store.providerResult(provider,e.kind||'temporary',e.message);throw e;}
         reservation.settle(r);
-        delete store.state.disabledProviders[provider];store.providerResult(provider,'working');agent.resumeBlocked();send(200,{ok:true,message:'Provider connected'});
+        delete store.state.disabledProviders[provider];delete store.state.providerCooldowns[provider];store.providerResult(provider,'working');agent.resumeBlocked();send(200,{ok:true,message:'Provider connected'});
       }else if(route==='POST /api/run') {
         if(store.state.config.leetcode?.enabled)throw Error('Use the Practice Ex. extension in the signed-in browser to run the live LeetCode session');
         if(!store.state.config.autoMode)throw Error('Turn Auto Mode on first');
         const j=await agent.daily(localTime(new Date(),store.state.config.timezone).date);agent.pump();send(202,{id:j.id});
-      }else if((route==='POST /api/leetcode/solve'||route==='POST /api/learning')) {
+      }else if((route==='POST /api/leetcode/solve'||route==='POST /api/learning'||route==='POST /api/interviews/feedback')) {
         const input=await body(req,2e6),c=store.state.config;
+        const interviewFeedback=route==='POST /api/interviews/feedback';let interviewRow=null;
+        if(interviewFeedback){interviewRow=interview(store,input.id,input.username);if(interviewRow.status==='active')throw Error('Finish the interview before requesting feedback');input.problem=interviewRow.problem;input.sessionId='interview:'+interviewRow.id;input.stage='review';input.code=interviewRow.code;}
         const live=activeContest(store.state.contestCalendar?.events);
         if(live)throw Error(`${live.title} is live. AI solving is paused until the contest ends.`);
         agent.chooseProvider();
         if(!c.leetcode?.enabled)throw Error('LeetCode browser mode is off');
         if(!input.problem||typeof input.problem.title!=='string'||typeof input.problem.statement!=='string'||typeof input.problem.starterCode!=='string')throw Error('Invalid LeetCode problem');
         if(input.problem.statement.length>90000||input.problem.starterCode.length>30000)throw Error('LeetCode problem is too large');
-        const learning=route==='POST /api/learning';
+        if(input.username!==undefined&&(typeof input.username!=='string'||!/^[\w-]{1,40}$/.test(input.username)))throw Error('Invalid practice account');
+        const learning=route==='POST /api/learning'||interviewFeedback;
+        if(learning&&input.interviewId){hintTicket=reserveInterviewHint(store,input.interviewId,input.username,input.stage);input.problem=hintTicket.row.problem;input.sessionId='interview:'+hintTicket.row.id;}
         if(learning&&!['hint','approach','review','solution'].includes(input.stage))throw Error('Choose a learning stage');
         if(learning&&input.stage==='review'&&(typeof input.code!=='string'||!input.code.trim()||input.code.length>60000))throw Error('Paste your code to review');
         let lastError;
-        const providerOrder=input.avoidProvider&&c.providerOrder.includes(input.avoidProvider)
-          ? [...c.providerOrder.filter(p=>p!==input.avoidProvider),input.avoidProvider]
-          : c.providerOrder;
-        for(const provider of providerOrder) {
-          if(!store.secret(provider)||store.state.disabledProviders[provider])continue;
-          const prompt=learning?learningPrompt(input.problem,c.language,input.stage,input.code||''):leetcodeSolutionPrompt(input.problem,c.language,input.feedback||'');
+        const providers=generationProviders(c,input.avoidProvider);
+        for(const provider of providers) {
+          if(!providerAvailable(store,provider))continue;
+          const prompt=interviewFeedback?interviewPrompt(interviewRow,c.language):learning?learningPrompt(input.problem,c.language,input.stage,input.code||''):leetcodeSolutionPrompt(input.problem,c.language,input.feedback||'');
           const date=localTime(new Date(),c.timezone).date;
-          const reservation=reserveUsage(store,date,provider,input.sessionId,prompt,c.maxOutputTokens);
+          let reservation;try{reservation=reserveUsage(store,date,provider,input.sessionId,prompt,c.maxOutputTokens,{priority:!learning&&(input.automatic||String(input.sessionId||'').startsWith('automatic:'))?'daily':'optional'});}catch(error){if(provider!=='local'&&providers.includes('local')&&/cost|prices/i.test(error.message)){lastError=error;continue;}throw error;}
           try {
-            const result=await agent.complete(provider,store.secret(provider),c.models[provider],prompt,c);
+            const result=await agent.complete(provider,store.secret(provider),providerModel(c,provider),prompt,c);
             const usage=reservation.settle(result);
             let solution;
-            if(learning&&input.stage!=='solution'){let value;try{value=JSON.parse(result.text.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''));}catch{throw Error('Provider returned invalid learning JSON');}if(typeof value.text!=='string'||value.text.length>30000)throw Error('Provider returned invalid learning guidance');solution={text:value.text};}
+            if(learning&&input.stage!=='solution'){let value;try{value=JSON.parse(result.text.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''));}catch{throw new ProviderError('Provider returned invalid learning JSON');}if(typeof value.text!=='string'||value.text.length>30000)throw new ProviderError('Provider returned invalid learning guidance');let feedback;if(interviewFeedback){try{feedback=parseInterviewFeedback(value);}catch{throw new ProviderError('Provider returned invalid interview rubric');}}solution={text:value.text,...(interviewFeedback?{feedback}:{})};}
             else solution=decodeSolution(result.text);
-            store.state.providerActivity={provider,fallbackFrom:provider!==c.providerOrder[0]?c.providerOrder[0]:null,at:new Date().toISOString()};
-            store.providerResult(provider,'working');send(200,{...solution,provider,language:c.language,usage,...(learning?{stage:input.stage}:{})});return;
+            store.state.providerActivity={provider,fallbackFrom:provider!==providers[0]?providers[0]:null,at:new Date().toISOString()};
+            if(hintTicket){if(hintTicket.row.status!=='active'||Date.now()>=Date.parse(hintTicket.row.deadline))throw Error('Interview ended before the hint was ready');hintTicket.finished=true;}
+            if(interviewFeedback){interviewRow.feedback=solution;store.save();}
+            recordAssistance(store,date,input.username,input.problem,learning?input.stage:'solution');
+            delete store.state.providerCooldowns[provider];store.providerResult(provider,'working');send(200,{...solution,provider,language:c.language,usage,...(learning?{stage:input.stage}:{})});return;
           }catch(e) {
             lastError=e;
-            if(e.kind)store.providerResult(provider,e.kind,e.message);
+            if(e.kind)store.providerResult(provider,e.kind,e.message);cooldown(store,provider,e);
             if(['key','quota','request'].includes(e.kind)) {
               store.state.disabledProviders[provider]={reason:e.message,kind:e.kind,since:new Date().toISOString()};
               agent.notify(`${provider} API needs attention`,e.message+(agent.chooseProvider()?' — trying the configured backup.':' — reconnect a key to resume.'),'error','leetcode');store.save();continue;
@@ -132,7 +181,7 @@ export function createServer(store,platform,agent,options={}) {
             throw e;
           }
         }
-        throw lastError||Error('No working Groq or Gemini API key');
+        throw lastError||Error('No provider is ready. Check local model settings, keys and provider cooldowns.');
       }else if(route==='POST /api/leetcode/verify') {
         const input=await body(req),c=store.state.config;
         if(!c.leetcode?.enabled)throw Error('LeetCode browser mode is off');
@@ -160,6 +209,6 @@ export function createServer(store,platform,agent,options={}) {
         const {id}=await body(req);if(agent.running.has('contest:'+id))throw Error('Cannot delete a running contest');
         store.state.contests=store.state.contests.filter(c=>c.id!==id);store.save();await buildPlan(store,platform,localTime(new Date(),store.state.config.timezone).date);send(200,{ok:true});
       }else send(404,{error:'Not found'});
-    }catch(e){if(url.pathname==='/api/provider-test')agent.notify('API connection failed',e.message,'error');send(400,{error:e.message});}
+    }catch(e){releaseInterviewHint(store,hintTicket);if(url.pathname==='/api/provider-test')agent.notify('API connection failed',e.message,'error');send(400,{error:e.message});}
   });
 }

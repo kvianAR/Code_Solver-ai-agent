@@ -19,6 +19,9 @@
 <button data-page="contests">⚑ &nbsp; LeetCode contests</button>
 <button data-page="history">↗ &nbsp; Solution history</button>
 <button data-page="learn">◇ &nbsp; Learning mode</button>
+<button data-page="practice">✓ &nbsp; My practice</button>
+<button data-page="notebook">▤ &nbsp; Mistake notebook</button>
+<button data-page="interview">◷ &nbsp; Mock interview</button>
 <button data-page="settings">⚙ &nbsp; Settings & keys</button>
 </nav>
 <div class="aside-foot">
@@ -60,6 +63,7 @@
 <button id="fix-setup" type="button" class="quiet">Open settings</button>
 <button id="browser-self-check" type="button" class="quiet">Check this browser</button>
 <p id="browser-check-result" class="muted"></p>
+<button id="readiness-check" type="button" class="quiet">Check daily readiness</button><p id="readiness-result" class="muted"></p>
 </section>
 <section class="page" id="page-today">
 <div class="page-title">
@@ -100,6 +104,7 @@
 </article>
 </div>
 <div class="card" style="margin-top:16px"><h2>Your next focus</h2><p id="practice-focus">Topic recommendations appear after recorded practice.</p><small id="revision-due"></small></div>
+<div class="card" style="margin-top:16px"><h2>Daily work has priority</h2><p id="protected-daily-budget"></p><p class="muted">Manual learning and interviews cannot spend the protected allowance. Estimates cover planned drafts; retries may need a higher budget.</p><small id="provider-recovery"></small></div>
 <div class="card" style="margin-top:16px"><h2>AI usage and cost</h2><div id="usage-breakdown"></div><p class="muted">USD estimates use your entered model prices. Unknown prices are not treated as free. Failed or unreported calls retain their maximum token reservation. Provider billing is the source of truth.</p></div>
 <div class="card" style="margin-top:16px">
 <strong>Submission accuracy</strong>
@@ -191,6 +196,20 @@
 <div class="checks"><button type="button" data-learn="hint">Get a hint</button><button type="button" data-learn="approach">Explain the approach</button><button type="button" data-learn="solution">Reveal full solution</button></div>
 <label>Your attempt<textarea id="learn-code" rows="12" spellcheck="false" placeholder="Paste your code for a review"></textarea></label><button type="button" data-learn="review">Review my code</button><div id="learn-output" aria-live="polite"></div></div>
 </section>
+<section class="page" id="page-practice" hidden>
+<div class="page-title"><div><span class="eyebrow">YOUR OWN ATTEMPTS</span><h1>Independent practice.</h1><p>Self-reported practice results stay separate from AI-assisted LeetCode acceptances.</p></div></div>
+<div class="card"><label>History account<input id="study-account" placeholder="LeetCode username"></label><button id="study-refresh" type="button">Load practice history</button><p id="independent-score"></p><p id="assisted-score"></p></div>
+<form id="practice-attempt" class="card"><button id="practice-load" type="button">Load current question</button><h2 id="practice-title">No question loaded</h2><label>Your attempt or notes<textarea id="practice-code" rows="8" spellcheck="false"></textarea></label><div class="checks"><label><input id="practice-solved" type="checkbox"> I solved this question</label><label><input id="practice-no-ai" type="checkbox"> I used no AI help for this attempt</label></div><p class="muted">App-recorded hints, reviews or solutions prevent the attempt from being labelled independent. Outside assistance remains self-reported. This does not create a LeetCode Accepted result.</p><button class="primary">Save practice result</button></form><div id="practice-records" class="stack"></div>
+</section>
+<section class="page" id="page-notebook" hidden>
+<div class="page-title"><div><span class="eyebrow">LEARN FROM FAILURES</span><h1>Mistake notebook.</h1><p>Algorithm failures are recorded separately from provider outages and invalid generated inputs.</p></div></div>
+<div class="card"><button id="notebook-refresh" type="button">Refresh notebook</button><button id="notebook-import" type="button">Import past extension mistakes</button><p class="muted">Uses the account selected under My practice, or the current signed-in account.</p></div><div id="mistake-records" class="stack"></div><button id="notebook-more" type="button" class="quiet" hidden>Show older notes</button>
+</section>
+<section class="page" id="page-interview" hidden>
+<div class="page-title"><div><span class="eyebrow">TIMED PRACTICE</span><h1>Mock interview.</h1><p>The server keeps the deadline across reloads. Hints are limited; AI feedback is a separate explicit request.</p></div></div>
+<form id="interview-start" class="card"><div class="form-grid"><label>Minutes<input name="minutes" type="number" min="10" max="90" value="30" required></label><label>Allowed hints<input name="hintLimit" type="number" min="0" max="5" value="1" required></label></div><button class="primary">Start with current question</button></form>
+<div id="interview-workspace" class="card" hidden><h2 id="interview-title"></h2><strong id="interview-timer"></strong><p id="interview-status"></p><label>Your solution<textarea id="interview-code" rows="14" spellcheck="false"></textarea></label><small>Draft autosaves after a short typing pause. The timer does not pause.</small><div class="checks"><button id="interview-hint" type="button">Use one hint</button><button id="interview-finish" type="button">Finish interview</button><button id="interview-feedback" type="button">Request AI feedback</button></div><div id="interview-result" aria-live="polite"></div><p class="muted">Feedback does not execute your code or certify correctness. Follow-up questions and rubric scores are AI assessments.</p></div>
+</section>
 <section class="page" id="page-settings" hidden>
 <div class="page-title">
 <div>
@@ -260,6 +279,8 @@
 </div>
 <div id="provider-cards" class="stack">
 </div>
+<form id="reliability-settings" class="card"><h2>Protect daily completion</h2><div class="form-grid"><label>Reserved tokens per remaining daily question<input name="dailyReservePerQuestion" type="number" min="1000" max="100000" required></label><label>Provider cooldown (seconds)<input name="providerCooldownSeconds" type="number" min="30" max="1800" required></label></div><p class="muted">The full allotted count and QOTD remain mandatory. Optional work waits when the daily allowance is needed.</p><button class="primary">Save reliability controls</button></form>
+<form id="local-ai-settings" class="card"><h2>Local AI: Ollama or LM Studio</h2><div class="checks"><label><input name="enabled" type="checkbox"> Enable an already installed local model</label><label><input name="cloudFallback" type="checkbox"> Allow cloud fallback</label></div><div class="form-grid"><label>Runtime<select name="backend"><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option></select></label><label>Loopback server URL<input name="baseUrl" type="url" required></label><label>Installed model<input name="model" list="local-model-list"><datalist id="local-model-list"></datalist></label><label>Provider preference<select name="preference"><option value="local-first">Local first</option><option value="cloud-first">Cloud first</option></select></label><label>Optional local API key<input name="key" type="password" autocomplete="off" placeholder="Leave blank to keep existing key"></label></div><div class="checks"><button class="primary">Save local AI</button><button id="local-models" type="button">Save and load installed models</button><button id="local-test" type="button">Test local JSON and syntax</button></div><p id="local-ai-result" class="muted"></p><p class="muted">No models are downloaded automatically. Local inference uses your Mac. Cloud fallback sends problem data to your configured cloud provider. With fallback off, an unavailable local model can block daily work. Disabling Local AI restores normal cloud routing.</p></form>
 <form id="advanced-settings" class="card"><h2>Practice and spending controls</h2>
 <div class="checks"><label><input type="checkbox" name="additionalChecks"> Check generated boundary inputs with LeetCode</label><label><input type="checkbox" name="adaptivePractice"> Prefer weak topics and spaced revision</label></div>
 <div class="form-grid"><label>Tokens per session<input name="sessionTokenBudget" type="number" min="1000" max="1000000" required></label><label>AI calls per session<input name="maxSessionCalls" type="number" min="1" max="1000" required></label><label>Daily estimated USD limit (0 disables)<input name="dailyCostBudgetUSD" type="number" min="0" max="10000" step="0.01" required></label>
@@ -302,5 +323,6 @@
 <script src="app.js">
 </script>
 <script src="advanced.js"></script>
+<script src="practice-plus.js"></script>
 </body>
 </html>

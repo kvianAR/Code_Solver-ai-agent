@@ -40,3 +40,11 @@ test('restoring a backup cannot redirect saved provider or platform credentials'
   backup.config.groqBaseUrl='https://different.example/v1';backup.config.platform={type:'http',baseUrl:'https://different.example/api'};
   restoreBackup(s,backup);assert.equal(s.state.config.groqBaseUrl,oldGroq);assert.deepEqual(s.state.config.platform,oldPlatform);
 });
+
+test('new study records round-trip while active interviews are stopped and local credentials keep their endpoint',t=>{
+  const s=fixture(t);s.setSecret('local','private-local-key');s.state.config.localAI.enabled=true;
+  s.state.study={entries:[],attempts:[],assistance:{},interviews:[{id:'session-1',username:'Student',problem:{title:'Question',titleSlug:'question',statement:'Solve it',starterCode:'class Solution: pass'},status:'active',deadline:'2026-10-28T10:00:00Z',hintLimit:1,hintsUsed:0}]};
+  const backup=exportBackup(s);backup.config.localAI.baseUrl='http://127.0.0.1:9999';
+  const fresh=fixture(t);fresh.setSecret('local','existing-local-key');const previous=fresh.state.config.localAI.baseUrl;
+  restoreBackup(fresh,backup);assert.equal(fresh.state.study.interviews[0].status,'cancelled');assert.equal(fresh.state.config.localAI.baseUrl,previous);assert.equal(fresh.secret('local'),'existing-local-key');
+});

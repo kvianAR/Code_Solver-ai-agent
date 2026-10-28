@@ -1,5 +1,5 @@
 (() => {
-  let problem=null,learningSession='',learningBusy=false,prepared=null,monitor;
+  let problem=null,learningUsername='',learningSession='',learningBusy=false,prepared=null,monitor;
   function download(name,value){const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   async function idle(){if(extension){const result=await chrome.runtime.sendMessage({type:'leetcode-run-status'});if(result?.activeId)throw Error('Finish or stop the current session first');}}
   function render(){
@@ -17,7 +17,7 @@
     $('#usage-breakdown').innerHTML=rows.length?'<table><thead><tr><th>Provider</th><th>Calls</th><th>Tokens</th><th>Estimated USD</th></tr></thead><tbody>'+rows.map(([p,row])=>`<tr><td>${esc(p)}</td><td>${row.calls}</td><td>${row.tokens.toLocaleString()}</td><td>${(row.unpricedCalls||row.unpricedCalls===undefined&&row.calls)?'Unknown / partially priced':'$'+row.estimatedCostUSD.toFixed(4)}</td></tr>`).join('')+'</tbody></table>':'No provider breakdown recorded for this day yet.';
     const sessions=Object.entries(usage.sessions||{}).sort((a,b)=>(b[1].startedAt||'').localeCompare(a[1].startedAt||''));
     $('#usage-breakdown').insertAdjacentHTML('beforeend',`<p class="muted">${sessions.length} recorded sessions · Current limit: ${c.sessionTokenBudget||100000} tokens and ${c.maxSessionCalls||32} AI calls per session.</p>`);
-    if(sessions.length)$('#usage-breakdown').insertAdjacentHTML('beforeend','<details><summary>Latest session usage</summary><table><thead><tr><th>Session</th><th>Calls</th><th>Tokens</th><th>Estimated USD</th></tr></thead><tbody>'+sessions.slice(0,5).map(([id,row])=>`<tr><td>${id.startsWith('learning:')?'Learning':id.startsWith('automatic:')?'Daily practice':id.startsWith('provider-test:')?'Provider check':'Manual practice'}</td><td>${row.calls}</td><td>${row.tokens.toLocaleString()}</td><td>${(row.unpricedCalls||row.unpricedCalls===undefined&&row.calls)?'Unknown / partially priced':'$'+row.estimatedCostUSD.toFixed(4)}</td></tr>`).join('')+'</tbody></table></details>');
+    if(sessions.length)$('#usage-breakdown').insertAdjacentHTML('beforeend','<details><summary>Latest session usage</summary><table><thead><tr><th>Session</th><th>Calls</th><th>Tokens</th><th>Estimated USD</th></tr></thead><tbody>'+sessions.slice(0,5).map(([id,row])=>`<tr><td>${id.startsWith('learning:')?'Learning':id.startsWith('interview:')?'Mock interview':id.startsWith('automatic:')||id.startsWith('daily:')?'Daily practice':id.startsWith('provider-test:')||id==='local-test'?'Provider check':'Manual practice'}</td><td>${row.calls}</td><td>${row.tokens.toLocaleString()}</td><td>${(row.unpricedCalls||row.unpricedCalls===undefined&&row.calls)?'Unknown / partially priced':'$'+row.estimatedCostUSD.toFixed(4)}</td></tr>`).join('')+'</tbody></table></details>');
     const failure=globalThis.failureGuide.explain(dailyDiagnostic?.message||'');
     $('#failure-action').textContent=['blocked','failed','connection','login','provider'].includes(dailyDiagnostic?.kind)?failure.summary+' '+failure.action:'';
     $('#browser-self-check').disabled=!extension;
@@ -25,7 +25,7 @@
   async function loadQuestion(){
     if(!extension)throw Error('Open the Practice Ex. extension to load a LeetCode question');
     const response=await chrome.runtime.sendMessage({type:'learning-current-question'});if(!response?.ok)throw Error(response?.error||'Could not load the question');
-    problem=response.problem;learningSession='learning:'+crypto.randomUUID();
+    problem=response.problem;learningUsername=response.username||leetcodeAccount;learningSession='learning:'+crypto.randomUUID();
     $('#learn-title').textContent=problem.title;$('#learn-statement').textContent=problem.statement.slice(0,1200);$('#learn-output').replaceChildren();
   }
   $('#learn-load').addEventListener('click',()=>loadQuestion().catch(error=>toast(error.message)));
@@ -34,7 +34,7 @@
     learningBusy=true;document.querySelectorAll('[data-learn]').forEach(b=>b.disabled=true);
     try{
       if(!problem)await loadQuestion();
-      const result=await api('learning',{problem,stage,code:$('#learn-code').value,sessionId:learningSession});
+      const result=await api('learning',{problem,stage,code:$('#learn-code').value,sessionId:learningSession,username:learningUsername||leetcodeAccount});
       const heading=document.createElement('h3');heading.textContent=stage==='solution'?'Full solution':stage==='review'?'Code review':stage==='hint'?'Hint':'Approach';
       const content=document.createElement(result.code?'pre':'p');content.textContent=result.code||result.text;
       const note=document.createElement('p');note.className='muted';note.textContent=`${result.provider} · ${result.usage?.tokens??'Estimated'} tokens. AI advice can be wrong; no submission was sent.`;
@@ -58,7 +58,7 @@
   });
   $('#restore-backup').addEventListener('click',async()=>{
     try{
-      await idle();const file=$('#restore-file').files[0];if(!file||file.size>20e6)throw Error('Select a JSON backup smaller than 20 MB');
+      await idle();const file=$('#restore-file').files[0];if(!file||file.size>50e6)throw Error('Select a JSON backup smaller than 50 MB');
       const backup=JSON.parse(await file.text()),imported=portableData.runs(backup.extensionRuns||{});
       let merged;
       if(extension){const {leetcodeRuns={}}=await chrome.storage.local.get('leetcodeRuns');merged={...imported,...leetcodeRuns};const bytes=new TextEncoder().encode(JSON.stringify(merged)).length;const [total,current]=await Promise.all([chrome.storage.local.getBytesInUse(null),chrome.storage.local.getBytesInUse('leetcodeRuns')]);if(total-current+bytes+1024>(chrome.storage.local.QUOTA_BYTES||10485760))throw Error('Merged extension history exceeds its storage allowance');}
@@ -101,9 +101,9 @@
   $('#rollback-update').addEventListener('click',async()=>{
     try{await idle();const select=$('#rollback-id'),id=select.value;if(!id)throw Error('Load and choose a restore point first');const version=select.selectedOptions[0].dataset.version;await updateRequest('rollback',{id},'rollback');$('#update-status').textContent='Restoring selected code version. Current history and keys are preserved.';watchUpdate(version);}catch(error){toast(error.message);}
   });
-  globalThis.advancedFeatures={render};
+  globalThis.advancedFeatures={render,loadQuestion,context:()=>({problem,username:learningUsername||leetcodeAccount,sessionId:learningSession})};
   if(location.hash==='#learn'){
     document.querySelector('nav [data-page="learn"]').click();
-    if(extension)chrome.storage.local.get('learningProblem').then(saved=>{if(saved.learningProblem){problem=saved.learningProblem;learningSession='learning:'+crypto.randomUUID();$('#learn-title').textContent=problem.title;$('#learn-statement').textContent=problem.statement.slice(0,1200);}});
+    if(extension)chrome.storage.local.get(['learningProblem','learningUsername']).then(saved=>{if(saved.learningProblem){problem=saved.learningProblem;learningUsername=saved.learningUsername||leetcodeAccount;learningSession='learning:'+crypto.randomUUID();$('#learn-title').textContent=problem.title;$('#learn-statement').textContent=problem.statement.slice(0,1200);}});
   }
 })();

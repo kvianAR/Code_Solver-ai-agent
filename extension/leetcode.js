@@ -92,27 +92,39 @@
     if(!problem.exampleTestcases?.trim())throw Error('LeetCode examples unavailable; no judged submission was sent');
     const csrf=document.cookie.split('; ').find(value=>value.startsWith('csrftoken='))?.split('=').slice(1).join('=');
     if(!csrf)throw Error('LeetCode session token unavailable. Reload the LeetCode tab and sign in again.');
-    const response=await fetch(`/problems/${encodeURIComponent(problem.titleSlug)}/interpret_solution/`,{
-      method:'POST',credentials:'include',headers:{'content-type':'application/json','x-csrftoken':decodeURIComponent(csrf),'x-requested-with':'XMLHttpRequest'},
-      body:JSON.stringify({lang:problem.langSlug||'python3',question_id:String(problem.id),typed_code:code,data_input:[problem.exampleTestcases,...(problem.additionalTestcases||[]).filter(t=>typeof t.input==='string'&&t.input.length<=4096).slice(0,4).map(t=>t.input)].join('\n')})
-    });
-    if(!response.ok)throw Error(`LeetCode Run Code unavailable (${response.status}); no judged submission was sent`);
-    const result=await response.json(),runId=result.interpret_id||result.interpretId;
-    if(!runId)throw Error('LeetCode Run Code did not return a run id; no judged submission was sent');
-    for(let attempt=0;attempt<45;attempt++){
-      await wait(1000);
-      const check=await fetch(`/submissions/detail/${runId}/check/`,{credentials:'include',headers:{'x-requested-with':'XMLHttpRequest'}});
-      if(!check.ok)throw Error(`LeetCode Run Code result unavailable (${check.status}); no judged submission was sent`);
-      const judged=await check.json();
-      if(judged.state!=='SUCCESS')continue;
-      const expected=judged.expected_code_answer,actual=judged.code_answer;
-      const comparable=Array.isArray(expected)&&Array.isArray(actual)&&expected.length>0&&expected.length===actual.length;
-      const matched=comparable&&expected.every((value,index)=>String(value).trim()===String(actual[index]).trim());
-      const ok=judged.run_success===true&&(judged.correct_answer===true||judged.correct_answer==null&&matched);
-      const feedback=[judged.status_msg,judged.compile_error,judged.runtime_error,judged.last_testcase&&`Testcase: ${judged.last_testcase}`,expected&&`Expected: ${JSON.stringify(expected)}`,actual&&`Output: ${JSON.stringify(actual)}`].filter(Boolean).join(' ');
-      return{ok,extraCases:Math.min(4,problem.additionalTestcases?.length||0),feedback:ok?'LeetCode examples and supplied boundary cases passed':feedback||'LeetCode examples or supplied boundary cases did not pass'};
+    const invalid=value=>!value.runtime_error&&!value.compile_error&&/invalid.*test|testcase.*invalid|invalid input/i.test([value.error,value.status_msg,value.message].filter(Boolean).join(' '));
+    async function check(input){
+      const response=await fetch(`/problems/${encodeURIComponent(problem.titleSlug)}/interpret_solution/`,{
+        method:'POST',credentials:'include',headers:{'content-type':'application/json','x-csrftoken':decodeURIComponent(csrf),'x-requested-with':'XMLHttpRequest'},
+        body:JSON.stringify({lang:problem.langSlug||'python3',question_id:String(problem.id),typed_code:code,data_input:input})
+      });
+      if(!response.ok)throw Error(`LeetCode Run Code unavailable (${response.status}); no judged submission was sent`);
+      const result=await response.json(),runId=result.interpret_id||result.interpretId;
+      if(invalid(result))return {ok:false,invalidInput:true,feedback:'LeetCode rejected the custom input format or constraints'};
+      if(!runId)throw Error('LeetCode Run Code did not return a run id; no judged submission was sent');
+      for(let attempt=0;attempt<45;attempt++){
+        await wait(1000);
+        const response=await fetch(`/submissions/detail/${runId}/check/`,{credentials:'include',headers:{'x-requested-with':'XMLHttpRequest'}});
+        if(!response.ok)throw Error(`LeetCode Run Code result unavailable (${response.status}); no judged submission was sent`);
+        const judged=await response.json();
+        if(invalid(judged))return {ok:false,invalidInput:true,feedback:'LeetCode rejected the generated custom inputs'};
+        if(judged.state!=='SUCCESS')continue;
+        const expected=judged.expected_code_answer,actual=judged.code_answer;
+        const comparable=Array.isArray(expected)&&Array.isArray(actual)&&expected.length>0&&expected.length===actual.length;
+        const matched=comparable&&expected.every((value,index)=>String(value).trim()===String(actual[index]).trim());
+        const ok=judged.run_success===true&&(judged.correct_answer===true||judged.correct_answer==null&&matched);
+        const feedback=[judged.status_msg,judged.compile_error,judged.runtime_error,judged.last_testcase&&`Testcase: ${judged.last_testcase}`,expected&&`Expected: ${JSON.stringify(expected)}`,actual&&`Output: ${JSON.stringify(actual)}`].filter(Boolean).join(' ');
+        return {ok,feedback:ok?'LeetCode reference checks passed':feedback||'LeetCode checks did not pass'};
+      }
+      throw Error('LeetCode Run Code timed out; no judged submission was sent');
     }
-    throw Error('LeetCode Run Code timed out; no judged submission was sent');
+    const examples=await check(problem.exampleTestcases);
+    if(!examples.ok)return {...examples,extraCases:0,extraStatus:'not-run'};
+    const extra=[...new Set((problem.additionalTestcases||[]).filter(t=>typeof t.input==='string'&&t.input.trim()&&t.input.length<=4096&&t.input.trim()!==problem.exampleTestcases.trim()).slice(0,4).map(t=>t.input.trim()))];
+    if(!extra.length)return {...examples,extraCases:0,extraStatus:'not-provided'};
+    const boundary=await check(extra.join('\n'));
+    if(boundary.invalidInput)return {ok:true,extraCases:0,extraStatus:'invalid-input',feedback:'Official examples passed. Generated inputs were invalid and were not counted as correctness checks.'};
+    return {...boundary,extraCases:extra.length,extraStatus:boundary.ok?'passed':'solution-failed'};
   }
   async function submissionResult(submissionId,expectedUsername){
     if(!/^[a-zA-Z0-9_-]+$/.test(String(submissionId)))throw Error('Invalid submission id');

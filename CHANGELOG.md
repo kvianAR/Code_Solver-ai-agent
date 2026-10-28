@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.1.0 — Daily reliability and personal practice
+
+- Check readiness shortly before scheduled daily work, including syntax, remaining budget and provider model catalogs. Check again at the due time; handle schedules around midnight.
+- Protect an estimated token/cost allowance for remaining daily questions before optional learning, interview or manual calls. Allow configuring the reserve and provider cooldown.
+- Recover verified unsubmitted drafts, retry pending judge-result lookups, and use provider cooldowns/fallback without consuming repeated failed calls.
+- Generate problem-specific boundary test plans. Keep official examples separate; invalid generated inputs warn instead of falsely failing the solution. Valid-case failures still block submission.
+- Add an account-specific mistake notebook, deduplicated history import, categories, revision notes and resolved status.
+- Track self-reported independent practice separately from AI-assisted acceptances. Recorded assistance prevents an attempt being counted as independent.
+- Add timed mock interviews with saved drafts, limited hints, follow-up questions and a structured feedback rubric. Enforce deadlines and hint limits on the server.
+- Add optional Ollama and LM Studio support with installed-model discovery, JSON/syntax capability checks, local-first/cloud-first ordering and explicit cloud fallback.
+
+The full configured daily allotment remains mandatory, with QOTD first and accepted judge results required for completion. Explicit Stop, account isolation, contest pauses and submission limits remain in force. Increasing the allotment retains accepted progress.
+
+Catalog checks do not guarantee generation quota. Budget reserves are estimates; retries can need more. Practice scores are self-reported, and interview feedback does not execute or prove code correctness. Local AI is off by default, downloads no models, and can send prompts to cloud providers only when cloud fallback is enabled. Study data is included in backups; restored active interviews are cancelled.
+
 ## 3.0.1
 
 - Preserve the standing daily allotment requirement: the full configured count, currently two, must have accepted results, including QOTD first.

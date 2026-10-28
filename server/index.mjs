@@ -7,6 +7,8 @@ import {Platform} from './platform.mjs';
 import {dockerJudge} from './runner.mjs';
 import {Agent} from './agent.mjs';
 import {createServer} from './http.mjs';
+import {providerOrder,providerAvailable} from './local-ai.mjs';
+import {readinessTarget} from '../extension/leetcode-runner.js';
 import {newPairingKey,writePairingFile} from './pairing.mjs';
 const dir=process.env.DATA_DIR||fileURLToPath(new URL('../data',import.meta.url));
 fs.mkdirSync(dir,{recursive:true,mode:0o700});
@@ -40,13 +42,14 @@ function localClock(timezone){
 }
 function wakeBrowserForLeetCode(){
   const config=store.state.config,clock=localClock(config.timezone);
-  if(process.platform!=='darwin'||!config.autoMode||!config.leetcode?.enabled||clock.time<config.dailyStartTime||browserLaunchDate===clock.date)return;
-  if(!config.providerOrder.some(provider=>store.secret(provider)))return;
+  const target=readinessTarget(config),phase=target===clock.date&&clock.time>=config.dailyStartTime?'daily':'precheck',launchKey=target+':'+phase;
+  if(process.platform!=='darwin'||!config.autoMode||!config.leetcode?.enabled||!target||browserLaunchDate===launchKey)return;
+  if(phase==='daily'&&!providerOrder(config).some(provider=>providerAvailable(store,provider)))return;
   if(awakeDate!==clock.date){
     awakeDate=clock.date;
     execFile('/usr/bin/caffeinate',['-i','-u','-t','1800'],error=>{if(error)console.error('Could not keep the Mac awake for LeetCode:',error.message);});
   }
-  browserLaunchDate=clock.date;
+  browserLaunchDate=launchKey;
   // Launch the configured browser hidden so the extension can run without stealing focus or
   // opening a visible LeetCode page in the middle of the user's work.
   const browser=config.leetcode.browser==='brave'?'Brave Browser':'Google Chrome';

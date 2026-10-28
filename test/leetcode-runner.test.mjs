@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {LeetCodeRunner, archiveRetryableAutomaticRun, automaticRetryDecision, latestArchivedAutomaticRun, loginPrecheckDue, nextHourlyRetryAt, shouldRetryForLaterSchedule} from '../extension/leetcode-runner.js';
+import {LeetCodeRunner, archiveRetryableAutomaticRun, automaticRetryDecision, latestArchivedAutomaticRun, readinessTarget, loginPrecheckDue, nextHourlyRetryAt, shouldRetryForLaterSchedule} from '../extension/leetcode-runner.js';
 
 const config = {timezone:'Asia/Kolkata', dailyStartTime:'10:00', autoMode:true,
   dailyQuestionCount:2, maxAttempts:8, language:'python', allowedDifficulties:['Easy'],
@@ -524,4 +524,26 @@ test('raising a completed daily allotment resumes only the additional question t
 test('manual review still produces a draft without a judged submission',async()=>{
   const {runner,runs,calls}=fixture();runner.start({...config,reviewBeforeSubmit:true},true,1,'Leetcoder071');await runner.done;
   assert.equal(Object.values(runs)[0].status,'review');assert.equal(calls.submitted.length,0);
+});
+
+test('a previously checked unsubmitted draft survives a temporary preflight outage without another generation',async()=>{
+  const previous={id:'automatic-history:network',date,mode:'automatic',username:'Leetcoder071',status:'blocked',tasks:[{status:'blocked',problem:{titleSlug:'daily',selection:'QOTD'},solution:{code:'class Solution: pass'},provider:'groq',verification:{ok:true},feedback:'Pre-submit check unavailable: network failure',attempts:1}]};
+  const {runner,runs,calls}=fixture({discover:async()=>({username:'Leetcoder071',questions:[{titleSlug:'daily',title:'Daily',selection:'QOTD'}]})},{'automatic-history:network':previous});
+  runner.start({...config,dailyQuestionCount:1},false,1,'Leetcoder071');await runner.done;
+  const run=Object.values(runs).find(r=>r.mode==='automatic'&&r.status==='completed');assert.ok(run);assert.equal(calls.solved,0);assert.equal(calls.submitted.length,1);
+});
+test('a recovered rejected submission clears only uncertainty and permits remaining bounded work',async()=>{
+  const {runner,runs,calls}=fixture({result:async()=>({accepted:false,feedback:'Wrong Answer'})},{saved:{id:'saved',mode:'automatic',username:'Leetcoder071',status:'blocked',reviewRequired:true,reviewReason:'uncertain-submission',tasks:[{status:'blocked',submissionId:'123',problem:{titleSlug:'daily',selection:'QOTD'},submissionHistory:[{status:'unknown'}]}]}});
+  await runner.recover(true,'Leetcoder071');assert.equal(runs.saved.tasks[0].submissionHistory[0].status,'rejected');assert.equal(runs.saved.reviewRequired,undefined);assert.equal(calls.submitted.length,0);
+});
+test('result recovery does not read submissions belonging to a different account',async()=>{
+  let reads=0;const {runner}=fixture({result:async()=>{reads++;}},{saved:{status:'blocked',username:'Other',tasks:[{status:'blocked',submissionId:'123',submissionHistory:[{status:'unknown'}]}]}});
+  await runner.recover(true,'Leetcoder071');assert.equal(reads,0);
+});
+
+test('readiness targets the next local day for schedules just after midnight',()=>{
+  const early={...config,dailyStartTime:'00:05'};
+  assert.equal(readinessTarget(early,new Date('2026-10-27T18:25:00Z')),'2026-10-28');
+  assert.equal(readinessTarget({...config,dailyStartTime:'10:00'},new Date('2026-10-28T04:19:00Z')),null);
+  assert.equal(readinessTarget({...config,dailyStartTime:'10:00'},new Date('2026-10-28T04:20:00Z')),'2026-10-28');
 });

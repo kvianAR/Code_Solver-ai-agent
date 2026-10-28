@@ -12,6 +12,7 @@ export class Store {
     this.state=fs.existsSync(this.file)?JSON.parse(fs.readFileSync(this.file)): {config:structuredClone(DEFAULT),secrets:{},jobs:[],notifications:[],contests:[],plan:null,usage:{},disabledProviders:{},providerHealth:{},providerActivity:null,leetcodeDailyCompletion:{},adminToken:process.env.ADMIN_TOKEN||crypto.randomBytes(32).toString('hex')};
     this.state.providerHealth ||= {};
     this.state.leetcodeDailyCompletion ||= {};
+    this.state.dailyProgress||={};this.state.dailyReadiness||={};this.state.providerCooldowns||={};
     const sourceHash=crypto.createHash('sha256').update(JSON.stringify(DEFAULT)).digest('hex');
     // Updates may add defaults, but must preserve saved times and models.
     this.state.config={...structuredClone(DEFAULT),...this.state.config,
@@ -26,10 +27,10 @@ export class Store {
   encrypt(value) { const iv=crypto.randomBytes(12), c=crypto.createCipheriv('aes-256-gcm',this.key,iv); return Buffer.concat([iv,c.update(value),c.final(),c.getAuthTag()]).toString('base64'); }
   decrypt(value) { const b=Buffer.from(value,'base64'),d=crypto.createDecipheriv('aes-256-gcm',this.key,b.subarray(0,12)); d.setAuthTag(b.subarray(-16)); return Buffer.concat([d.update(b.subarray(12,-16)),d.final()]).toString(); }
   secret(name) { if (this.state.secrets[name]) return this.decrypt(this.state.secrets[name]); return process.env[`${name.toUpperCase()}_API_KEY`] || ''; }
-  setSecret(name,value) { if (value) this.state.secrets[name]=this.encrypt(value); else delete this.state.secrets[name]; delete this.state.disabledProviders[name]; delete this.state.providerHealth[name]; this.save(); }
+  setSecret(name,value) { if (value) this.state.secrets[name]=this.encrypt(value); else delete this.state.secrets[name]; delete this.state.disabledProviders[name]; delete this.state.providerHealth[name];delete this.state.providerCooldowns[name];this.state.dailyReadiness={}; this.save(); }
   providerResult(name,status,reason='') { this.state.providerHealth[name]={status,reason,checkedAt:new Date().toISOString()}; this.save(); }
   publicState() {
     const {config,jobs,notifications,contests,plan,usage,disabledProviders,providerHealth,providerActivity}=this.state;
-    return {config,jobs,notifications,contests,plan,usage,disabledProviders,providerHealth,providerActivity,providers:Object.fromEntries(['groq','gemini'].map(p=>[p,{configured:!!this.secret(p),model:config.models[p]}]))};
+    return {config,jobs,notifications,contests,plan,usage,disabledProviders,providerHealth,providerActivity,providerCooldowns:this.state.providerCooldowns,providers:{...Object.fromEntries(['groq','gemini'].map(p=>[p,{configured:!!this.secret(p),model:config.models[p]}])),local:{configured:!!config.localAI.enabled&&!!config.localAI.model,model:config.localAI.model}}};
   }
 }

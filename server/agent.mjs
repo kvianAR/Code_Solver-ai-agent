@@ -1,3 +1,4 @@
+import {providerOrder,providerAvailable,providerModel,cooldown} from './local-ai.mjs';
 import {reserveUsage} from './usage.mjs';
 import crypto from 'node:crypto';
 import {localTime,monday} from './time.mjs';
@@ -87,7 +88,7 @@ export class Agent {
       if(quota&&blocked.since&&(localTime(new Date(blocked.since),s.config.timezone).date<today||this.now()-new Date(blocked.since)>=30*60000)){delete s.disabledProviders[provider];delete s.providerHealth?.[provider];changed=true;}
     }
     if(changed)this.store.save();
-    return s.config.providerOrder.find(p=>this.store.secret(p)&&!s.disabledProviders[p]);
+    return providerOrder(s.config).find(p=>providerAvailable(this.store,p,this.now().getTime()));
   }
   async solveTask(job,task) {
     const c=this.store.state.config;
@@ -95,16 +96,16 @@ export class Agent {
       if(!this.store.state.config.autoMode){task.status='pending';return 'paused';}
       if(job.endAt&&this.now()>=new Date(job.endAt)){task.status='failed';task.feedback='Contest deadline reached';return 'failed';}
       const provider=this.chooseProvider();
-      if(!provider){task.status='blocked';task.feedback='No working API key. Add or reconnect a provider.';return 'blocked';}
+      if(!provider){task.status='blocked';task.feedback='No working provider. Check keys, local model settings or cooldowns.';return 'blocked';}
       const prompt=solutionPrompt(task.problem,c.language,task.feedback,c.ownedSolutionStyle);
       const date=localTime(this.now(),c.timezone).date;
-      let reservation;try{reservation=reserveUsage(this.store,date,provider,job.id,prompt,c.maxOutputTokens);}catch(error){task.status='blocked';task.feedback=error.message;return 'blocked';}
+      let reservation;try{reservation=reserveUsage(this.store,date,provider,job.id,prompt,c.maxOutputTokens,{priority:job.type==='daily'?'daily':'optional'});}catch(error){task.status='blocked';task.feedback=error.message;return 'blocked';}
       task.attempts++;task.status='solving';task.provider=provider;this.store.save();
       let waitSeconds=Math.min(c.maxRetrySeconds,c.retryBaseSeconds*2**(task.attempts-1));
       try {
-        const result=await this.complete(provider,this.store.secret(provider),c.models[provider],prompt,c);
-        this.store.state.providerActivity={provider,fallbackFrom:provider!==c.providerOrder[0]?c.providerOrder[0]:null,at:this.now().toISOString()};
-        this.store.providerResult(provider,'working');
+        const result=await this.complete(provider,this.store.secret(provider),providerModel(c,provider),prompt,c);
+        this.store.state.providerActivity={provider,fallbackFrom:provider!==providerOrder(c)[0]?providerOrder(c)[0]:null,at:this.now().toISOString()};
+        delete this.store.state.providerCooldowns?.[provider];this.store.providerResult(provider,'working');
         reservation.settle(result);
         this.store.save();
         const solution=decodeSolution(result.text);
@@ -116,6 +117,7 @@ export class Agent {
       }catch(e) {
         task.feedback=e.message;
         if(e.kind)this.store.providerResult(provider,e.kind,e.message);
+        if(['temporary','rate'].includes(e.kind)){cooldown(this.store,provider,e,this.now().getTime());if(!this.chooseProvider()){task.status='blocked';return 'blocked';}waitSeconds=0;}
         if(['key','quota','request'].includes(e.kind)) {
           this.store.state.disabledProviders[provider]={reason:e.message,kind:e.kind,since:this.now().toISOString()};
           this.notify(`${provider} API needs attention`,e.message+(this.chooseProvider()?' — trying the configured backup.':' — reconnect a key to resume.'),'error',job.id);

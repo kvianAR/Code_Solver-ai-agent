@@ -1,6 +1,7 @@
 (() => {
   function explain(message=''){
     const rules=[
+      ['daily-priority',/reserved for.*daily/i,'Optional practice is waiting for the daily allotment.','Finish daily work first or raise the daily budget.'],
       ['quota',/quota|balance|billing/i,'Provider quota is exhausted.','Check provider billing or select the backup provider.'],
       ['budget',/budget|cost limit/i,'An AI spending limit was reached.','Check daily and session limits in Settings.'],
       ['connection',/connection token|token did not match|401/i,'The server connection needs attention.','Use Connect automatically to refresh local pairing.'],

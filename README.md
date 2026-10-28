@@ -333,3 +333,16 @@ If LeetCode AI Agent helps your practice routine, a ⭐ or a shared walkthrough 
 ## License
 
 [MIT](LICENSE) © 2026 LeetCode AI Agent contributors.
+
+
+## 3.1 daily reliability and practice tools
+
+The dashboard adds **My practice**, **Mistake notebook**, and **Mock interview**. Open a signed-in LeetCode problem through the extension to load its context. Personal practice scores are self-reported and separate from automatic judge acceptances. Interviews have server-enforced deadlines, limited hints, draft saving, follow-up questions and AI feedback; that feedback is not executed correctness testing.
+
+Daily readiness checks run before scheduled work and at the due time. Optional AI calls leave a configurable estimated allowance for remaining daily questions. Catalog access is not proof of generation quota, and retries may need a larger budget. Recovery reuses verified unsubmitted drafts and reconciles uncertain submission results before new work.
+
+**Daily requirement stays unchanged:** QOTD first; every configured daily question needs an accepted judge result before completion. Learning/review settings cannot convert automatic work into drafts or reduce the allotment. Stop/pause, account boundaries, contest pauses and submission limits still apply.
+
+Under Settings, enable **Local AI** only if you have Ollama or LM Studio running locally. Choose the backend and loopback URL, list installed models, save one, then run its capability check. No model is downloaded automatically. Local AI starts disabled. Cloud fallback is explicit; when enabled, prompts may be sent to configured cloud providers. Local calls have no provider API charge estimate, but token limits and device resources still apply.
+
+Study records are included in normal backups. Imported active interviews become cancelled so they cannot resume with a stale timer. Reload the unpacked extension once after updating to 3.1.0.

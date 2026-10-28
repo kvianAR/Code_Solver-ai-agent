@@ -77,6 +77,12 @@ export function localClock(timeZone, now = new Date()) {
   }).formatToParts(now).filter(p => p.type !== 'literal').map(p => [p.type, p.value]));
   return {date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}`};
 }
+export function readinessTarget(config,now=new Date()){
+  const clock=localClock(config.timezone,now),current=Number(clock.time.slice(0,2))*60+Number(clock.time.slice(3)),start=Number(config.dailyStartTime.slice(0,2))*60+Number(config.dailyStartTime.slice(3));
+  const until=(start-current+1440)%1440;
+  if(until>0&&until<=10&&current>start)return new Date(Date.parse(clock.date+'T00:00:00Z')+86400000).toISOString().slice(0,10);
+  return current>=start-10?clock.date:null;
+}
 
 export function loginPrecheckDue(config, now = new Date(), lastCheckAt = 0) {
   if (!config.autoMode || !config.leetcode?.enabled) return false;
@@ -96,11 +102,13 @@ export function loginPrecheckDue(config, now = new Date(), lastCheckAt = 0) {
 export class LeetCodeRunner {
   constructor(io) { this.io = io; this.active = null; }
 
-  async recover(retryResults=false) {
+  async recover(retryResults=false,username='') {
     const runs = await this.io.load();
     for (const run of Object.values(runs)) {
+      if(username&&run.username?.toLowerCase()!==username.toLowerCase())continue;
       if (!ACTIVE.has(run.status)&&!(retryResults&&(run.tasks||[]).some(t=>t.status==='blocked'&&t.submissionId&&t.submissionHistory?.at(-1)?.status==='unknown'))) continue;
       run.status = 'interrupted';
+      const uncertain=run.reviewReason==='uncertain-submission'||(run.tasks||[]).some(t=>t.submissionId&&t.submissionHistory?.at(-1)?.status==='unknown');
       run.feedback = 'Browser restarted during this session. Automatic work will resume after the next poll.';
       for (const task of run.tasks || []) {
         if((task.status==='submitting'||retryResults&&task.status==='blocked'&&task.submissionId)&&this.io.result){
@@ -114,10 +122,11 @@ export class LeetCodeRunner {
               continue;
             }catch(error){task.feedback='Result recovery needs attention: '+error.message;}
           }else task.feedback='Submission may have been sent before restart. Check LeetCode submission history before retrying.';
-          task.status='blocked';run.status='blocked';run.reviewRequired=true;continue;
+          task.status='blocked';run.status='blocked';run.reviewRequired=true;run.nextResultCheckAt=new Date(this.io.now().getTime()+5*60000).toISOString();continue;
         }
         if (['solving', 'drafting', 'checking', 'testing', 'submitting'].includes(task.status)) task.status = 'interrupted';
       }
+      if(uncertain&&!run.tasks.some(t=>t.status==='blocked')){delete run.reviewRequired;delete run.reviewReason;delete run.nextResultCheckAt;}
       if(run.target&&run.tasks.filter(t=>t.status==='accepted').length===run.target&&(run.mode==='manual'||hasAcceptedQotd(run))){run.status='completed';delete run.reviewRequired;run.finishedAt=this.io.now().toISOString();run.feedback='Recovered LeetCode results after browser restart';}
       await this.io.save(run);
     }
@@ -205,7 +214,9 @@ export class LeetCodeRunner {
         for (const problem of fresh.slice(0, run.target - run.tasks.length)) {
           excludeSlugs.add(problem.titleSlug);
           const prior=problem.selection==='QOTD'&&problem.alreadyAcceptedToday?accountRuns.flatMap(r=>r.date===clock.date?r.tasks||[]:[]).find(t=>t.status==='accepted'&&t.problem?.titleSlug===problem.titleSlug):null;
-          run.tasks.push(prior?{...structuredClone(prior),problem,status:'accepted'}:{problem,status:'pending',attempts:0,feedback:''});
+          const previous=priorTasksFor(problem.titleSlug).at(-1);
+          const cached=previous?.solution&&previous.verification?.ok&&!previous.submissionAttempts&&!previous.submissionHistory?.length&&(previous.status==='review'||/Pre-submit check unavailable|network|429|timed out/i.test(previous.feedback||''));
+          run.tasks.push(prior?{...structuredClone(prior),problem,status:'accepted'}:{problem,status:'pending',attempts:0,feedback:previous?.feedback?`Previous attempt: ${previous.feedback}${previous.solution?.code?'\nPrevious draft:\n'+previous.solution.code.slice(0,3000):''}`:'',previousProvider:previous?.provider,cachedDraft:cached?{...previous.solution,provider:previous.provider}:null});
         }
         if (!fresh.length) return false;
         await this.io.save(run);
@@ -239,7 +250,8 @@ export class LeetCodeRunner {
             run.reviewRequired=true;break;
           }
           if (accountUsername && this.io.session && (await this.io.session()).toLowerCase() !== accountUsername.toLowerCase()) throw Error('LeetCode account changed during this run. Retry with the account currently signed in.');
-          task.attempts++;
+          const cachedDraft=task.cachedDraft;delete task.cachedDraft;
+          if(!cachedDraft)task.attempts++;
           task.status = 'drafting';
           await this.io.save(run);
           if (active.stop) return await this.finishStopped(run);
@@ -247,8 +259,8 @@ export class LeetCodeRunner {
           try {
             const rejectedCode=task.submittedCodeFingerprints.length?task.solution?.code:'';
             const feedback=rejectedCode?`${task.feedback}\nPreviously rejected code (do not repeat):\n${rejectedCode.slice(0,3000)}`:task.feedback;
-            solution = await this.io.solve(task.problem, feedback, active.controller.signal,
-              task.attempts>1?task.provider:'',run.id);
+            solution = cachedDraft||await this.io.solve(task.problem, feedback, active.controller.signal,
+              task.attempts>1?task.provider:task.previousProvider||'',run.id,{username:run.username,automatic:!manual});
             if (active.stop) return await this.finishStopped(run);
             task.provider = solution.provider;
             task.solution = {code: solution.code, explanation: solution.explanation, complexity: solution.complexity,testCases:solution.testCases||[]};
@@ -280,7 +292,7 @@ export class LeetCodeRunner {
             task.preflightRuns=(task.preflightRuns||0)+1;
             const checked=await this.io.preflight({...task.problem,additionalTestcases:config.additionalChecks?solution.testCases||[]:[]},solution.code,run.username,active.controller.signal);
             if(active.stop)return await this.finishStopped(run);
-            task.preflight={ok:!!checked?.ok,extraCases:checked?.extraCases||0};
+            task.preflight={ok:!!checked?.ok,extraCases:checked?.extraCases||0,extraStatus:checked?.extraStatus||'',feedback:checked?.feedback||''};
             if(!checked?.ok){
               task.preflightFailures=(task.preflightFailures||0)+1;
               task.feedback=`Run Code failed: ${checked?.feedback||'LeetCode examples did not pass'}`;
@@ -322,7 +334,7 @@ export class LeetCodeRunner {
             task.status='pending';await this.io.save(run);
           }catch(error){
             if(active.stop)return await this.finishStopped(run);
-            task.feedback=`Submission result uncertain: ${error.message}`;task.status='blocked';run.reviewRequired=true;
+            task.feedback=`Submission result uncertain: ${error.message}`;task.status='blocked';run.reviewRequired=true;run.reviewReason='uncertain-submission';run.nextResultCheckAt=new Date(this.io.now().getTime()+5*60000).toISOString();
             await this.io.save(run);
             break;
           }

@@ -88,11 +88,11 @@ test('scheduler does not run before ten; runs once per date and persists',async 
   await agent.tick();assert.equal(store.state.jobs.length,1);
   assert.equal(new Store(dir).state.jobs[0].status,'completed');
 });
-test('temporary API failure stops at eight calls and sends notification',async t=>{
+test('temporary provider failure enters cooldown without burning eight calls',async t=>{
   let calls=0;const {store,agent}=fixture(t,{complete:async()=>{calls++;throw new ProviderError('Temporary outage');}});store.setSecret('groq','test');
   const job=agent.createJob('test:retry','contest',[catalog[0]]);await agent.runJob(job);
-  assert.equal(calls,8);assert.equal(job.tasks[0].attempts,8);assert.equal(job.status,'failed');
-  assert.ok(store.state.notifications.some(n=>n.title==='8-attempt limit reached'));
+  assert.equal(calls,1);assert.equal(job.tasks[0].attempts,1);assert.equal(job.status,'blocked');
+  assert.ok(store.state.providerCooldowns.groq);
 });
 test('wrong answers retry and never count as completed',async t=>{
   const {store,agent,platform}=fixture(t);store.setSecret('groq','test');platform.submit=async()=>({accepted:false,feedback:'Wrong Answer'});
@@ -237,7 +237,7 @@ test('setup diagnostics stay authenticated and do not make provider calls',async
   assert.equal((await fetch(url+'/api/diagnostics')).status,401);
   const response=await fetch(url+'/api/diagnostics',{headers:{Authorization:'Bearer '+store.state.adminToken}});
   assert.equal(response.status,200);const result=await response.json();
-  assert.equal(result.version,'3.0.1');assert.ok(result.checks.some(c=>c.id==='syntax'&&c.ok));
+  assert.equal(result.version,'3.1.0');assert.ok(result.checks.some(c=>c.id==='syntax'&&c.ok));
   assert.ok(!JSON.stringify(result).includes(store.state.adminToken));assert.deepEqual(store.state.usage,{});
 });
 
@@ -260,4 +260,36 @@ test('backup and restore endpoints require auth and reject invalid input without
   const exported=await (await fetch(url+'/api/backup',{headers})).json();assert.equal(exported.format,'practice-ex.backup');assert.ok(!JSON.stringify(exported).includes(store.state.adminToken));
   assert.equal((await fetch(url+'/api/restore',{method:'POST',headers,body:'{"format":"unknown"}'})).status,400);assert.equal(JSON.stringify(store.state.config),before);
   for(const asset of ['advanced.js','practice-plan.js','portable-data.js','failure-guide.js'])assert.equal((await fetch(url+'/'+asset)).status,200);
+});
+
+test('local provider failure falls back to cloud without changing the daily allotment',async t=>{
+  const calls=[];const {store,platform,agent}=fixture(t,{complete:async provider=>{calls.push(provider);if(provider==='local')throw new ProviderError('Local service unavailable','temporary');return {text:'{"code":"class Solution: pass"}',tokens:10};}});
+  store.state.config.leetcode.enabled=true;store.state.config.localAI={...store.state.config.localAI,enabled:true,model:'coder:tiny',cloudFallback:true};store.setSecret('gemini','fake');
+  const server=createServer(store,platform,agent);await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const response=await fetch('http://127.0.0.1:'+server.address().port+'/api/leetcode/solve',{method:'POST',headers:{Authorization:'Bearer '+store.state.adminToken,'Content-Type':'application/json'},body:JSON.stringify({problem:{title:'Question',statement:'Solve it',starterCode:'class Solution: pass'},sessionId:'automatic:today:test',automatic:true})});
+  assert.equal(response.status,200);assert.equal((await response.json()).provider,'gemini');assert.deepEqual(calls,['local','gemini']);assert.ok(store.state.providerCooldowns.local);assert.equal(store.state.config.dailyQuestionCount,2);
+});
+
+test('interview finish can overtake a slow hint and the undelivered hint is refunded',async t=>{
+  let enteredResolve,finishResolve;const entered=new Promise(resolve=>enteredResolve=resolve),gate=new Promise(resolve=>finishResolve=resolve);
+  const {store,platform,agent}=fixture(t,{complete:async()=>{enteredResolve();await gate;return {text:'{"text":"A hint"}',tokens:10};}});
+  store.state.config.leetcode.enabled=true;store.setSecret('gemini','fake');
+  const server=createServer(store,platform,agent);await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const url='http://127.0.0.1:'+server.address().port,headers={Authorization:'Bearer '+store.state.adminToken,'Content-Type':'application/json'};
+  const post=(route,data)=>fetch(url+'/api/'+route,{method:'POST',headers,body:JSON.stringify(data)});
+  const session=await(await post('interviews/start',{username:'Student',problem:{id:'1',title:'Question',titleSlug:'question',statement:'Solve it',starterCode:'class Solution: pass'},minutes:10,hintLimit:1})).json();
+  const pending=post('learning',{username:'Student',problem:session.problem,stage:'hint',interviewId:session.id});await entered;
+  assert.equal((await post('interviews/finish',{id:session.id,username:'Student',code:'my own attempt'})).status,200);finishResolve();
+  const result=await pending;assert.equal(result.status,400);assert.match((await result.json()).error,/ended before/);assert.equal(store.state.study.interviews[0].hintsUsed,0);
+});
+
+test('interview feedback has a separate structured rubric and cannot count as accepted daily work',async t=>{
+  const {store,platform,agent}=fixture(t,{complete:async()=>({text:JSON.stringify({text:'Review the edge cases',strengths:['Clear names'],issues:['Missing empty-input handling'],followUps:['How would you reduce memory?'],rubric:{correctness:2,complexity:3,communication:4}}),tokens:20})});
+  store.state.config.leetcode.enabled=true;store.setSecret('gemini','fake');const server=createServer(store,platform,agent);await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)));
+  const url='http://127.0.0.1:'+server.address().port,headers={Authorization:'Bearer '+store.state.adminToken,'Content-Type':'application/json'};
+  const post=(route,data)=>fetch(url+'/api/'+route,{method:'POST',headers,body:JSON.stringify(data)});
+  const session=await(await post('interviews/start',{username:'Student',problem:{title:'Question',titleSlug:'question',statement:'Solve it',starterCode:'class Solution: pass'},minutes:10,hintLimit:1})).json();
+  assert.equal((await post('interviews/feedback',{id:session.id,username:'Student'})).status,400);
+  await post('interviews/finish',{id:session.id,username:'Student',code:'class Solution: pass'});
+  const r=await post('interviews/feedback',{id:session.id,username:'Student'});assert.equal(r.status,200);assert.equal((await r.json()).feedback.rubric.correctness,2);assert.equal(Object.keys(store.state.leetcodeDailyCompletion).length,0);
 });

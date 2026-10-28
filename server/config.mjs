@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {localBase} from './local-ai.mjs';
 export const DEFAULT = JSON.parse(fs.readFileSync(new URL('../config.json', import.meta.url)));
 export function validateConfig(input) {
   const c = structuredClone(input);
@@ -8,6 +9,11 @@ export function validateConfig(input) {
   c.additionalChecks ??= true;c.adaptivePractice ??= true;
   c.sessionTokenBudget ??= 100000;c.maxSessionCalls ??= 32;c.dailyCostBudgetUSD ??= 0;
   c.providerPricing ??= {groq:null,gemini:null};
+  c.dailyReservePerQuestion??=6000;c.providerCooldownSeconds??=120;
+  c.localAI={enabled:false,backend:'ollama',baseUrl:'http://127.0.0.1:11434',model:'',cloudFallback:true,preference:'local-first',...c.localAI};
+  if(!Number.isInteger(c.dailyReservePerQuestion)||c.dailyReservePerQuestion<1000||c.dailyReservePerQuestion>100000||!Number.isInteger(c.providerCooldownSeconds)||c.providerCooldownSeconds<30||c.providerCooldownSeconds>1800)throw Error('Invalid daily reserve or provider cooldown');
+  if(typeof c.localAI.enabled!=='boolean'||typeof c.localAI.cloudFallback!=='boolean'||!['ollama','lmstudio'].includes(c.localAI.backend)||!['local-first','cloud-first'].includes(c.localAI.preference)||typeof c.localAI.model!=='string'||c.localAI.model.length>160)throw Error('Invalid local AI settings');
+  localBase(c);
   if(typeof c.additionalChecks!=='boolean'||typeof c.adaptivePractice!=='boolean')throw Error('Invalid practice controls');
   if(!Number.isInteger(c.sessionTokenBudget)||c.sessionTokenBudget<1000||c.sessionTokenBudget>1000000||!Number.isInteger(c.maxSessionCalls)||c.maxSessionCalls<1||c.maxSessionCalls>1000)throw Error('Invalid session budget');
   if(!Number.isFinite(c.dailyCostBudgetUSD)||c.dailyCostBudgetUSD<0||c.dailyCostBudgetUSD>10000)throw Error('Invalid cost budget');
