@@ -35,7 +35,7 @@
     try{
       if(!problem)await loadQuestion();
       const result=await api('learning',{problem,stage,code:$('#learn-code').value,sessionId:learningSession,username:learningUsername||leetcodeAccount});
-      const heading=document.createElement('h3');heading.textContent=stage==='solution'?'Full solution':stage==='review'?'Code review':stage==='hint'?'Hint':'Approach';
+      const heading=document.createElement('h3');heading.textContent=stage==='solution'?'Full solution':stage==='review'?'Code review':stage==='hint'?'Hint':stage==='compare'?'Approach comparison':'Approach';
       const content=document.createElement(result.code?'pre':'p');content.textContent=result.code||result.text;
       const note=document.createElement('p');note.className='muted';note.textContent=`${result.provider} · ${result.usage?.tokens??'Estimated'} tokens. AI advice can be wrong; no submission was sent.`;
       $('#learn-output').replaceChildren(heading,content,note);await refresh();
@@ -80,16 +80,16 @@
     const result=await response.json();if(!response.ok)throw Error(result.error||'Update failed');return result;
   }
   function watchUpdate(version){
-    clearInterval(monitor);let attempts=0;const started=Date.now(),before=state.serverVersion;
+    clearInterval(monitor);let attempts=0;const started=Date.now();
     monitor=setInterval(async()=>{
       attempts++;
-      try{const latest=await api('state');let updates={};try{updates=await api('updates');}catch{}if(latest.serverVersion===version&&(version!==before||updates.status?.phase==='complete'&&Date.parse(updates.status.at)>=started)){clearInterval(monitor);state=latest;renderSetup();$('#update-status').textContent=`Server ${version} is ready. Reload the extension in chrome://extensions to finish.`;return;}if(['failed','rolled-back'].includes(updates.status?.phase)){clearInterval(monitor);$('#update-status').textContent='The update could not complete. The previous code was restored; check local update logs.';}
+      try{const latest=await api('state');let updates={};try{updates=await api('updates');}catch{}if(latest.serverVersion===version&&updates.status?.phase==='complete'&&Date.parse(updates.status.at)>=started){clearInterval(monitor);state=latest;renderSetup();$('#update-status').textContent=`Server ${version} is ready. Reload the extension in chrome://extensions to finish.`;return;}if(['failed','rolled-back','rollback-failed'].includes(updates.status?.phase)){clearInterval(monitor);$('#update-status').textContent=updates.status.phase==='rollback-failed'?'Automatic restore needs attention. Run Start Practice Ex.command and check data/update.log.':updates.status.phase==='rolled-back'?'The update failed its checks. The previous code was restored; check data/update.log.':'The update stopped before completion. Check data/update.log.';}
       }catch{}
       if(attempts>=60){clearInterval(monitor);$('#update-status').textContent='The server has not returned yet. Open Start Practice Ex.command and check setup.';}
     },2000);
   }
   $('#prepare-update').addEventListener('click',async()=>{
-    try{await idle();const file=$('#update-file').files[0];if(!file||file.size>50e6)throw Error('Select a release ZIP smaller than 50 MB');prepared=await updateRequest('prepare',file);$('#update-plan').textContent=`Checked version ${prepared.version}: ${prepared.files} entries. Installation backs up the current code and settings, restarts the server and preserves current history and keys.`;$('#install-update').hidden=false;}catch(error){prepared=null;$('#install-update').hidden=true;toast(error.message);}
+    try{await idle();const file=$('#update-file').files[0];if(!file||file.size>50e6)throw Error('Select a release ZIP smaller than 50 MB');prepared=await updateRequest('prepare',file);$('#update-plan').textContent=`Checked version ${prepared.version}: ${prepared.files} entries; ${prepared.checks?.syntaxFiles??0} source files passed syntax checks. Installation backs up the current code and settings, restarts the server and preserves current history and keys.`;$('#install-update').hidden=false;}catch(error){prepared=null;$('#install-update').hidden=true;toast(error.message);}
   });
   $('#install-update').addEventListener('click',async()=>{
     if(!prepared)return;

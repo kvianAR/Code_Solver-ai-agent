@@ -45,11 +45,45 @@ export function validateArchive(file){
   const version=checkCompatibility(read('package.json'),read('extension/manifest.json'),names.has('compatibility.json')?read('compatibility.json'):undefined);
   return {version,files:names.size};
 }
+export function checkReleaseCode(root){
+  const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'))),manifest=JSON.parse(fs.readFileSync(path.join(root,'extension','manifest.json')));
+  JSON.parse(fs.readFileSync(path.join(root,'config.json')));
+  const compatibility=path.join(root,'compatibility.json');
+  checkCompatibility(pkg,manifest,fs.existsSync(compatibility)?JSON.parse(fs.readFileSync(compatibility)):undefined);
+  let checked=0;
+  const visit=dir=>{if(!fs.existsSync(dir))return;for(const item of fs.readdirSync(dir,{withFileTypes:true})){
+    const file=path.join(dir,item.name);if(item.isDirectory())visit(file);
+    else if(/\.(?:m?js)$/.test(item.name)){
+      try{execFileSync(process.execPath,['--check',file],{timeout:5000,stdio:'pipe'});}catch{throw Error('Release syntax check failed: '+path.relative(root,file));}
+      const source=fs.readFileSync(file,'utf8');
+      for(const match of source.matchAll(/(?:from\s*|import\s*)['"](\.\.?\/[^'"]+)['"]/g))if(!fs.existsSync(path.resolve(path.dirname(file),match[1])))throw Error('Release dependency missing: '+path.relative(root,file));
+      checked++;
+    }
+  }};
+  for(const folder of ['extension','server','scripts'])visit(path.join(root,folder));
+  const dashboard=path.join(root,'extension','dashboard.html');
+  if(fs.existsSync(dashboard))for(const match of fs.readFileSync(dashboard,'utf8').matchAll(/(?:src|href)="([^"#]+\.(?:js|css))"/g))if(!fs.existsSync(path.join(root,'extension',match[1])))throw Error('Dashboard asset missing: '+match[1]);
+  if(manifest.action?.default_popup&&!fs.existsSync(path.join(root,'extension',manifest.action.default_popup)))throw Error('Extension popup is missing');
+  return {syntaxFiles:checked,assets:true};
+}
+export function verifyUpdatedService(root,version){
+  const script=`import fs from 'node:fs';
+    const root=process.argv[1],version=process.argv[2];
+    const runtime=JSON.parse(fs.readFileSync(root+'/data/server.json'));
+    const url=new URL(runtime.url);if(!['127.0.0.1','localhost'].includes(url.hostname))throw Error('Expected a loopback server');
+    const state=JSON.parse(fs.readFileSync(root+'/data/state.json'));
+    const options={headers:{Authorization:'Bearer '+state.adminToken},signal:AbortSignal.timeout(8000)};
+    const response=await fetch(url.origin+'/api/state',options);if(!response.ok)throw Error('Authenticated server check failed');
+    const value=await response.json();if(value.serverVersion!==version||value.apiVersion!==1||!value.config)throw Error('Updated server version or API mismatch');
+    const diagnostics=await fetch(url.origin+'/api/diagnostics',options).then(r=>{if(!r.ok)throw Error('Diagnostics unavailable');return r.json();});
+    if(!diagnostics.checks.find(c=>c.id==='syntax')?.ok)throw Error('Updated syntax service is unavailable');`;
+  try{execFileSync(process.execPath,['--input-type=module','-e',script,root,version],{timeout:25000,stdio:'pipe'});}catch{throw Error('Updated server failed its authenticated startup checks');}
+}
 export function prepareRelease(store,buffer){
   inspectZip(buffer);
   const dir=path.join(store.dir,'pending-updates');fs.mkdirSync(dir,{recursive:true,mode:0o700});
   const id=crypto.randomUUID(),file=path.join(dir,id+'.zip');fs.writeFileSync(file,buffer,{mode:0o600});
-  try{const info=validateArchive(file);fs.writeFileSync(path.join(dir,id+'.json'),JSON.stringify({...info,sha256:crypto.createHash('sha256').update(buffer).digest('hex')}),{mode:0o600});return {id,...info};}
+  try{const info=validateArchive(file),stage=fs.mkdtempSync(path.join(store.dir,'release-check-'));try{execFileSync('unzip',['-q',file,'-d',stage],{timeout:15000});info.checks=checkReleaseCode(stage);}finally{fs.rmSync(stage,{recursive:true,force:true});}fs.writeFileSync(path.join(dir,id+'.json'),JSON.stringify({...info,sha256:crypto.createHash('sha256').update(buffer).digest('hex')}),{mode:0o600});return {id,...info};}
   catch(error){fs.rmSync(file,{force:true});throw error;}
 }
 function copyCode(from,to){
@@ -96,13 +130,15 @@ export function applyArchive(root,file,{manageService=true}={}){
   let saved,mutated=false;
   try{
     execFileSync('unzip',['-q',file,'-d',stage],{timeout:15000});
+    checkReleaseCode(stage);
     saved=snapshot(root);status(root,'installing',{version:info.version,rollbackId:saved.id});
     if(manageService)stop(root);
     mutated=true;replaceCode(stage,root);
-    if(manageService)start(root);
+    checkReleaseCode(root);
+    if(manageService){start(root);verifyUpdatedService(root,info.version);}
     status(root,'complete',{version:info.version,rollbackId:saved.id});return {version:info.version,rollbackId:saved.id};
   }catch(error){
-    if(mutated&&saved){replaceCode(path.join(saved.dir,'code'),root);if(manageService)start(root);}
+    if(mutated&&saved){try{replaceCode(path.join(saved.dir,'code'),root);if(manageService){start(root);verifyUpdatedService(root,saved.version);}}catch{status(root,'rollback-failed',{version:saved.version});throw Error('Update failed and automatic restore needs attention. Run Start Practice Ex.command and check data/update.log.');}}
     status(root,mutated?'rolled-back':'failed',{version:saved?.version});throw error;
   }finally{fs.rmSync(stage,{recursive:true,force:true});}
 }
@@ -113,9 +149,10 @@ export function applyRollback(root,id,{manageService=true}={}){
   const pkg=JSON.parse(fs.readFileSync(path.join(source,'package.json'))),manifest=JSON.parse(fs.readFileSync(path.join(source,'extension','manifest.json')));
   const compatFile=path.join(source,'compatibility.json');
   checkCompatibility(pkg,manifest,fs.existsSync(compatFile)?JSON.parse(fs.readFileSync(compatFile)):undefined);
+  checkReleaseCode(source);
   const saved=snapshot(root);
-  try{if(manageService)stop(root);replaceCode(source,root);if(manageService)start(root);status(root,'complete',{version:pkg.version,rollbackId:saved.id});return {version:pkg.version,rollbackId:saved.id};}
-  catch(error){replaceCode(path.join(saved.dir,'code'),root);if(manageService)start(root);status(root,'rolled-back',{version:saved.version});throw error;}
+  try{if(manageService)stop(root);replaceCode(source,root);checkReleaseCode(root);if(manageService){start(root);verifyUpdatedService(root,pkg.version);}status(root,'complete',{version:pkg.version,rollbackId:saved.id});return {version:pkg.version,rollbackId:saved.id};}
+  catch(error){try{replaceCode(path.join(saved.dir,'code'),root);if(manageService){start(root);verifyUpdatedService(root,saved.version);}}catch{status(root,'rollback-failed',{version:saved.version});throw Error('Rollback failed and automatic restore needs attention. Check data/update.log.');}status(root,'rolled-back',{version:saved.version});throw error;}
 }
 export function launchUpdate(store,id,rollback=false){
   const root=fileURLToPath(new URL('..',import.meta.url));

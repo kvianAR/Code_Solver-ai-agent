@@ -2,15 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
+import {acceptedDailyTasks,deadlineNotice,connectionHealth} from '../extension/daily-recovery.js';
 import {readinessTarget} from '../extension/leetcode-runner.js';
 
 const source=readFileSync(new URL('../extension/background.js',import.meta.url),'utf8')
   .replace(/^import .*?;\n/gm,'');
 
-async function runPoll(due,precheck=false,sessionResponse={ok:true,value:{signedIn:true,username:'TestUser'}}){
+async function runPoll(due,precheck=false,sessionResponse={ok:true,value:{signedIn:true,username:'TestUser'}},overrides={}){
   const tabs=[],created=[],removed=[],notifications=[],started=[],saved={connection:{url:'http://127.0.0.1:8787',token:'test'},
     leetcodeRuns:{},leetcodeAccount:'TestUser',contestCalendarVersion:2,
     contestCalendarUpdatedAt:Date.now(),leetcodeContests:[]};
+  Object.assign(saved,overrides);
   const config={autoMode:true,dailyStartTime:due?'00:00':'23:59',timezone:'Asia/Kolkata',
     dailyQuestionCount:2,leetcode:{enabled:true}};
   const state={config,notifications:[],jobs:[],today:'2026-10-06'};
@@ -35,9 +37,9 @@ async function runPoll(due,precheck=false,sessionResponse={ok:true,value:{signed
   class Runner{
     constructor(){this.active=null;}
     async recover(){}
-    start(){started.push(true);this.done=Promise.resolve();return {started:true,id:'automatic:2026-10-06:testuser'};}
+    start(...args){started.push(args);this.done=Promise.resolve();return {started:true,id:'automatic:2026-10-06:testuser'};}
   }
-  runInNewContext(source,{readinessTarget,chrome,LeetCodeRunner:Runner,activeContest:()=>null,contestRefreshDue:()=>false,
+  runInNewContext(source,{acceptedDailyTasks,deadlineNotice,connectionHealth,readinessTarget,chrome,LeetCodeRunner:Runner,activeContest:()=>null,contestRefreshDue:()=>false,
     localClock:()=>({date:'2026-10-06',time:'12:00'}),dailyRunForAccount:()=>null,
     latestArchivedAutomaticRun:()=>null,automaticRetryDecision:()=>({due}),loginPrecheckDue:()=>precheck,
     archiveRetryableAutomaticRun:()=>false,shouldRetryForLaterSchedule:()=>false,
@@ -82,4 +84,12 @@ test('confirmed sign-out clears the account and asks for login once',async()=>{
   assert.equal(checked.saved.dailyDiagnostic.kind,'login');
   assert.equal(checked.started.length,0);
   assert.equal(checked.notifications.filter(n=>n.id==='leetcode-login').length,1);
+});
+
+
+test('a wake-up catch-up retains accepted archived work instead of starting the allotment from zero',async()=>{
+  const run={mode:'automatic',date:'2026-10-06',username:'TestUser',tasks:[{status:'accepted',problem:{titleSlug:'daily-qotd',selection:'QOTD'}}]};
+  const result=await runPoll(true,false,undefined,{lastPollAt:Date.now()-3600000,leetcodeRuns:{archive:run}});
+  assert.equal(result.started.length,1);assert.equal(result.started[0][5].length,1);
+  assert.equal(result.saved.wakeRecovery.acceptedRetained,1);assert.match(result.saved.dailyDiagnostic.message,/resumed now/);
 });

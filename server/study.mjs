@@ -94,6 +94,10 @@ export function portableStudy(input){
   }
   if(!input.assistance||typeof input.assistance!=='object'||Array.isArray(input.assistance)||Object.keys(input.assistance).length>20000)throw Error('Invalid assistance history');
   for(const [key,row] of Object.entries(input.assistance))if(!/^\d{4}-\d{2}-\d{2}:[\w-]{1,40}:[a-z0-9-]{1,150}$/.test(key)||!row||!Number.isInteger(row.hints)||!Number.isInteger(row.requests)||row.hints<0||row.requests<row.hints||row.requests>1000000)throw Error('Invalid assistance record');
+  if(input.revisions!==undefined){
+    if(!Array.isArray(input.revisions)||input.revisions.length>10000)throw Error('Invalid revision history');
+    for(const row of input.revisions){user(row.username);if(typeof row.id!=='string'||row.id.length>300||typeof row.entryId!=='string'||row.entryId.length>300||!/^\d{4}-\d{2}-\d{2}$/.test(row.date)||typeof row.correct!=='boolean'||!categories.has(row.answer))throw Error('Invalid revision record');}
+  }
   const copy=structuredClone(input);
   for(const row of copy.interviews){
     row.problem=problem(row.problem);

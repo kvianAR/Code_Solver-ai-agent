@@ -17,7 +17,7 @@ async function contestOpener(existingTab=false){
   const chrome={
     storage:{local:{async get(keys){return Object.fromEntries(keys.map(key=>[key,saved[key]]));},
       async set(value){Object.assign(saved,value);}}},
-    tabs:{async query(){return tabs;},async create(options){created.push(options);tabs.push({id:2,url:options.url});}},
+    tabs:{onUpdated:{addListener(){}},async query(){return tabs;},async create(options){created.push(options);tabs.push({id:2,url:options.url});}},
     notifications:{async create(id,options){notifications.push({id,...options});},onClicked:{addListener(){}}},
     runtime:{onInstalled:{addListener(){}},onStartup:{addListener(){}},onMessage:{addListener(){}}},
     alarms:{onAlarm:{addListener(){}}},action:{},

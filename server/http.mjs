@@ -1,3 +1,4 @@
+import {revisionDeck,answerRevision,weeklyReport} from './practice-insights.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -31,7 +32,7 @@ export function createServer(store,platform,agent,options={}) {
       if(!allowPairing(req,options.pairingKey)){send(403,{error:'Local extension pairing required'});return;}
       send(200,{token:store.state.adminToken});return;
     }
-    const assets={'/':'dashboard.html','/app.js':'app.js','/connection.js':'connection.js','/practice-plan.js':'practice-plan.js','/portable-data.js':'portable-data.js','/failure-guide.js':'failure-guide.js','/advanced.js':'advanced.js','/practice-plus.js':'practice-plus.js','/practice-metrics.js':'practice-metrics.js','/style.css':'style.css'};
+    const assets={'/':'dashboard.html','/app.js':'app.js','/connection.js':'connection.js','/practice-plan.js':'practice-plan.js','/portable-data.js':'portable-data.js','/failure-guide.js':'failure-guide.js','/advanced.js':'advanced.js','/practice-plus.js':'practice-plus.js','/reliability-ui.js':'reliability-ui.js','/practice-metrics.js':'practice-metrics.js','/style.css':'style.css'};
     if(req.method==='GET'&&assets[url.pathname]){res.writeHead(200,{'Content-Type':url.pathname.endsWith('.js')?'text/javascript':url.pathname.endsWith('.css')?'text/css':'text/html','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});res.end(fs.readFileSync(new URL('../extension/'+assets[url.pathname],import.meta.url)));return;}
     if(!authorized(req,store.state.adminToken)){send(401,{error:'Connection token required'});return;}
     let hintTicket=null;
@@ -71,7 +72,13 @@ export function createServer(store,platform,agent,options={}) {
         send(200,{ok:true,message:'Local JSON generation and syntax passed. Coding quality is not certified.'});
       }else if(route==='GET /api/study'){
         send(200,studySummary(store,url.searchParams.get('username')));
-      }else if(route==='POST /api/study/attempt'){
+      }else if(route==='GET /api/study/revision'){
+      send(200,{questions:revisionDeck(store,url.searchParams.get('username'),localTime(new Date(),store.state.config.timezone).date)});
+    }else if(route==='POST /api/study/revision'){
+      send(200,answerRevision(store,await body(req),localTime(new Date(),store.state.config.timezone).date));
+    }else if(route==='GET /api/study/weekly'){
+      send(200,weeklyReport(store,url.searchParams.get('username'),localTime(new Date(),store.state.config.timezone).date));
+    }else if(route==='POST /api/study/attempt'){
         send(200,recordAttempt(store,await body(req),localTime(new Date(),store.state.config.timezone).date));
       }else if(route==='POST /api/study/mistakes'){
         send(200,recordMistakes(store,await body(req,4e6)));
@@ -150,8 +157,8 @@ export function createServer(store,platform,agent,options={}) {
         if(input.username!==undefined&&(typeof input.username!=='string'||!/^[\w-]{1,40}$/.test(input.username)))throw Error('Invalid practice account');
         const learning=route==='POST /api/learning'||interviewFeedback;
         if(learning&&input.interviewId){hintTicket=reserveInterviewHint(store,input.interviewId,input.username,input.stage);input.problem=hintTicket.row.problem;input.sessionId='interview:'+hintTicket.row.id;}
-        if(learning&&!['hint','approach','review','solution'].includes(input.stage))throw Error('Choose a learning stage');
-        if(learning&&input.stage==='review'&&(typeof input.code!=='string'||!input.code.trim()||input.code.length>60000))throw Error('Paste your code to review');
+        if(learning&&!['hint','approach','review','solution','compare'].includes(input.stage))throw Error('Choose a learning stage');
+        if(learning&&['review','compare'].includes(input.stage)&&(typeof input.code!=='string'||!input.code.trim()||input.code.length>60000))throw Error('Paste your code to review');
         let lastError;
         const providers=generationProviders(c,input.avoidProvider);
         for(const provider of providers) {

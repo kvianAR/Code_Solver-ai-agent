@@ -48,3 +48,13 @@ test('new study records round-trip while active interviews are stopped and local
   const fresh=fixture(t);fresh.setSecret('local','existing-local-key');const previous=fresh.state.config.localAI.baseUrl;
   restoreBackup(fresh,backup);assert.equal(fresh.state.study.interviews[0].status,'cancelled');assert.equal(fresh.state.config.localAI.baseUrl,previous);assert.equal(fresh.secret('local'),'existing-local-key');
 });
+
+test('daily progress and revision recall survive backup merge without replacing newer local history',t=>{
+  const s=fixture(t),date='2026-10-28';
+  s.state.dailyProgress={[date]:{'account:student':{accepted:2,target:2,qotdAccepted:true}}};
+  s.state.study={entries:[],attempts:[],interviews:[],assistance:{},revisions:[{id:'revision-1',entryId:'mistake-1',username:'Student',date,answer:'boundary',correct:true}]};
+  const backup=exportBackup(s),fresh=fixture(t);restoreBackup(fresh,backup);
+  assert.equal(fresh.state.dailyProgress[date]['account:student'].accepted,2);assert.equal(fresh.state.study.revisions.length,1);
+  fresh.state.dailyProgress[date]['account:student'].accepted=3;restoreBackup(fresh,backup);assert.equal(fresh.state.dailyProgress[date]['account:student'].accepted,3);assert.equal(fresh.state.study.revisions.length,1);
+  backup.dailyProgress[date]['account:student'].accepted=-1;assert.throws(()=>restoreBackup(fresh,backup),/Invalid daily progress/);
+});

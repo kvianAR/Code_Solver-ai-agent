@@ -547,3 +547,18 @@ test('readiness targets the next local day for schedules just after midnight',()
   assert.equal(readinessTarget({...config,dailyStartTime:'10:00'},new Date('2026-10-28T04:19:00Z')),null);
   assert.equal(readinessTarget({...config,dailyStartTime:'10:00'},new Date('2026-10-28T04:20:00Z')),'2026-10-28');
 });
+
+test('a new manual run cannot resubmit a question with an older unknown judge result',async()=>{
+  const old={id:'old',mode:'manual',date:'2026-09-28',status:'blocked',username:'Leetcoder071',tasks:[{status:'blocked',problem:{titleSlug:'two-sum'},submissionHistory:[{status:'unknown',submissionId:'pending-result'}]}]};
+  const {runner,runs,calls}=fixture({discover:async()=>({username:'Leetcoder071',questions:[{titleSlug:'two-sum',title:'Two Sum'}]})},{old});
+  runner.start(config,true,1,'Leetcoder071','two-sum');await runner.done;
+  assert.equal(calls.solved,0);assert.equal(calls.submitted.length,0);
+  const current=Object.values(runs).find(r=>r.id!=='old');assert.equal(current.status,'blocked');assert.equal(current.reviewReason,'uncertain-submission');
+});
+
+test('recovering the original judge result releases a guard-only blocked daily retry',async()=>{
+  const original={id:'original',mode:'manual',date,status:'blocked',username:'Leetcoder071',tasks:[{status:'blocked',problem:{titleSlug:'two-sum'},submissionId:'123',submissionHistory:[{status:'unknown',submissionId:'123'}]}]};
+  const shadow={id:'shadow',mode:'automatic',date,status:'blocked',reviewRequired:true,reviewReason:'uncertain-submission',username:'Leetcoder071',tasks:[{status:'blocked',problem:{titleSlug:'two-sum'},feedback:'An earlier submission result is still unknown.'}]};
+  const {runner,runs}=fixture({result:async()=>({accepted:true,feedback:'Accepted'})},{shadow,original});await runner.recover(true,'Leetcoder071');
+  assert.equal(runs.original.tasks[0].status,'accepted');assert.equal(runs.shadow.status,'interrupted');assert.equal(runs.shadow.reviewRequired,undefined);
+});

@@ -346,3 +346,17 @@ Daily readiness checks run before scheduled work and at the due time. Optional A
 Under Settings, enable **Local AI** only if you have Ollama or LM Studio running locally. Choose the backend and loopback URL, list installed models, save one, then run its capability check. No model is downloaded automatically. Local AI starts disabled. Cloud fallback is explicit; when enabled, prompts may be sent to configured cloud providers. Local calls have no provider API charge estimate, but token limits and device resources still apply.
 
 Study records are included in normal backups. Imported active interviews become cancelled so they cannot resume with a stale timer. Reload the unpacked extension once after updating to 3.1.0.
+
+## 3.2 recovery and personal insights
+
+The **Today** page includes connection health and the last missed-run recovery. Startup, network recovery and completed LeetCode page loads check pending work. Accepted daily progress is merged across the same account/date archives. An interrupted run or missed-time gap prompts a fresh login check before resuming. Explicit Stop/pause is respected. Unknown earlier submissions block a new submission until their judge results are recovered; a submission with no saved ID needs checking in LeetCode history.
+
+Desktop alerts warn at 60 and 15 minutes before local midnight if QOTD or the full allotment is still pending. They include the current blocker and are deduplicated per account/day. Chrome must be running for alerts and submissions. This does not run while the Mac is powered off. After midnight, the scheduler follows the new local day's QOTD rather than claiming yesterday was completed.
+
+**Revision quizzes** draw from the selected account's mistake notebook. Identify the stored failure category, then reveal saved feedback and notes. The first answer per question/day is recorded; correct recall returns after three days, incorrect recall tomorrow. This measures notebook recall, not independent algorithm skill or judge acceptance.
+
+In **Learning mode**, load a question, paste your own code, then select **Compare my approach**. The optional AI call compares invariants, complexity and tradeoffs while preserving the daily budget reserve and contest pause. AI analysis is not execution or proof of correctness.
+
+**Weekly report** covers seven local dates. Daily accepted/QOTD results, self-reported independent practice, assisted attempts, mistakes and quiz recall are separate. Unknown daily records remain unknown, and older missing targets are marked estimated. Reports can be downloaded as JSON. Daily progress and revision history are included in normal backups.
+
+Release checks now parse source and verify required local dependencies/assets before code replacement. Installation saves a private restore point, then checks authenticated server version, API and syntax service after restart. A failed check restores the prior code; current runtime history is preserved. A failed restore stays visibly failed. These checks do not sign or certify a release; choose a ZIP you trust. Reload the unpacked extension after updating to 3.2.0.

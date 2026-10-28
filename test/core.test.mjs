@@ -1,3 +1,4 @@
+import {SERVER_VERSION} from '../server/diagnostics.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -237,7 +238,7 @@ test('setup diagnostics stay authenticated and do not make provider calls',async
   assert.equal((await fetch(url+'/api/diagnostics')).status,401);
   const response=await fetch(url+'/api/diagnostics',{headers:{Authorization:'Bearer '+store.state.adminToken}});
   assert.equal(response.status,200);const result=await response.json();
-  assert.equal(result.version,'3.1.0');assert.ok(result.checks.some(c=>c.id==='syntax'&&c.ok));
+  assert.equal(result.version,SERVER_VERSION);assert.ok(result.checks.some(c=>c.id==='syntax'&&c.ok));
   assert.ok(!JSON.stringify(result).includes(store.state.adminToken));assert.deepEqual(store.state.usage,{});
 });
 
@@ -292,4 +293,28 @@ test('interview feedback has a separate structured rubric and cannot count as ac
   assert.equal((await post('interviews/feedback',{id:session.id,username:'Student'})).status,400);
   await post('interviews/finish',{id:session.id,username:'Student',code:'class Solution: pass'});
   const r=await post('interviews/feedback',{id:session.id,username:'Student'});assert.equal(r.status,200);assert.equal((await r.json()).feedback.rubric.correctness,2);assert.equal(Object.keys(store.state.leetcodeDailyCompletion).length,0);
+});
+
+test('comparison requires user code, uses optional budgets and records assistance without submitting',async t=>{
+  const prompts=[];const {store,platform,agent}=fixture(t,{complete:async(_p,_k,_m,prompt)=>{prompts.push(prompt);return {text:JSON.stringify({text:'Hash map: O(n) time, O(n) space. Sorting: O(n log n) time.'}),tokens:50,inputTokens:40,outputTokens:10};}});
+  store.state.config.leetcode.enabled=true;store.setSecret('gemini','fake-key');
+  const server=createServer(store,platform,agent);await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+  const url='http://127.0.0.1:'+server.address().port,headers={Authorization:'Bearer '+store.state.adminToken,'Content-Type':'application/json'},problem={title:'Two Sum',titleSlug:'two-sum',statement:'Find a pair',starterCode:'class Solution: pass'};
+  let response=await fetch(url+'/api/learning',{method:'POST',headers,body:JSON.stringify({problem,stage:'compare',username:'Student',sessionId:'learning:compare'})});assert.equal(response.status,400);assert.equal(prompts.length,0);
+  response=await fetch(url+'/api/learning',{method:'POST',headers,body:JSON.stringify({problem,stage:'compare',code:'class Solution: pass',username:'Student',sessionId:'learning:compare'})});
+  assert.equal(response.status,200);assert.match((await response.json()).text,/O\(n\)/);assert.match(prompts[0],/time\/space complexity of both/);assert.match(prompts[0],/Do not claim execution/);
+  const summary=await fetch(url+'/api/study?username=Student',{headers}).then(r=>r.json());assert.equal(summary.attempts.length,0);assert.equal(store.state.jobs.length,0);
+});
+test('personal revision and weekly endpoints are authenticated, isolated and make no provider calls',async t=>{
+  const {store,platform,agent}=fixture(t,{complete:async()=>{throw Error('No AI call expected');}});
+  const server=createServer(store,platform,agent);await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+  const url='http://127.0.0.1:'+server.address().port,headers={Authorization:'Bearer '+store.state.adminToken,'Content-Type':'application/json'};
+  assert.equal((await fetch(url+'/api/study/weekly?username=Student')).status,401);
+  const row={date:'2026-10-28',username:'Student',titleSlug:'two-sum',feedback:'index boundary failure',hadFailure:true};
+  assert.equal((await fetch(url+'/api/study/mistakes',{method:'POST',headers,body:JSON.stringify([row])})).status,200);
+  const deck=await fetch(url+'/api/study/revision?username=Student',{headers}).then(r=>r.json());assert.equal(deck.questions.length,1);assert.equal(deck.questions[0].category,undefined);
+  const other=await fetch(url+'/api/study/revision?username=Other',{headers}).then(r=>r.json());assert.equal(other.questions.length,0);
+  const answer=await fetch(url+'/api/study/revision',{method:'POST',headers,body:JSON.stringify({id:deck.questions[0].id,username:'Student',answer:'boundary'})}).then(r=>r.json());assert.equal(answer.correct,true);
+  const report=await fetch(url+'/api/study/weekly?username=Student',{headers}).then(r=>r.json());assert.equal(report.days.length,7);assert.equal(report.days.at(-1).quizCorrect,1);assert.equal(report.days.at(-1).accepted,null);
+  assert.deepEqual(store.state.usage,{});
 });

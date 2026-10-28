@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {execFileSync} from 'node:child_process';
-import {inspectZip,validateArchive,applyArchive,applyRollback,listSnapshots,checkCompatibility} from '../server/releases.mjs';
+import {execFileSync,spawn} from 'node:child_process';
+import {inspectZip,validateArchive,applyArchive,applyRollback,listSnapshots,checkCompatibility,verifyUpdatedService} from '../server/releases.mjs';
 function tree(root,version){
   for(const folder of ['data','extension','server','scripts'])fs.mkdirSync(path.join(root,folder),{recursive:true});
   for(const [file,value] of Object.entries({'package.json':JSON.stringify({name:'leetcode-ai-agent',version}),'extension/manifest.json':JSON.stringify({version}),'server/index.mjs':'// version '+version,'scripts/setup.mjs':'// fixture setup','config.json':'{}'}))fs.writeFileSync(path.join(root,file),value);
@@ -37,4 +37,37 @@ test('compatibility mismatches and damaged archives fail before an update',t=>{
   assert.throws(()=>checkCompatibility({name:'leetcode-ai-agent',version:'3.0.0'},{version:'2.9.0'}),/versions must match/);
   assert.throws(()=>checkCompatibility({name:'leetcode-ai-agent',version:'3.0.0'},{version:'3.0.0'},{apiVersion:2,minNodeMajor:22}),/runtime or API/);
   assert.throws(()=>inspectZip(Buffer.from('invalid')),/Invalid/);
+});
+
+test('broken source and missing dependencies are rejected before installed code is changed',t=>{
+  const {root,source,archive}=fixture(t);
+  for(const body of ['const = ;',"import './missing-file.mjs';"]){
+    fs.writeFileSync(path.join(source,'server','index.mjs'),body);fs.rmSync(archive);execFileSync('zip',['-qr',archive,'package.json','config.json','extension','server','scripts'],{cwd:source});
+    assert.throws(()=>applyArchive(root,archive,{manageService:false}),/syntax check failed|dependency missing/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(root,'package.json'))).version,'2.9.0');assert.equal(listSnapshots(path.join(root,'data')).length,0);
+  }
+});
+test('a damaged installed copy triggers automatic code rollback after the restore point is saved',t=>{
+  const {root,archive}=fixture(t),original=fs.cpSync;let damaged=false;
+  fs.cpSync=function(from,to,options){const result=original(from,to,options);if(!damaged&&from.includes('release-stage-')&&from.endsWith('server')){damaged=true;fs.writeFileSync(path.join(to,'index.mjs'),'const = ;');}return result;};
+  try{assert.throws(()=>applyArchive(root,archive,{manageService:false}),/syntax check failed/);}finally{fs.cpSync=original;}
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root,'package.json'))).version,'2.9.0');assert.equal(JSON.parse(fs.readFileSync(path.join(root,'data','update-status.json'))).phase,'rolled-back');
+});
+
+
+test('post-update checks require authenticated API, matching version and working syntax service',async t=>{
+  const {root}=fixture(t);
+  const child=spawn(process.execPath,['--input-type=module','-e',`
+    import http from 'node:http';import fs from 'node:fs';
+    const root=process.argv[1];
+    const server=http.createServer((req,res)=>{if(req.headers.authorization!=='Bearer fixture-token'){res.writeHead(401);res.end('{}');return;}res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.url==='/api/state'?{serverVersion:'3.0.0',apiVersion:1,config:{}}:{checks:[{id:'syntax',ok:true}]}));});
+    server.listen(0,'127.0.0.1',()=>{fs.writeFileSync(root+'/data/server.json',JSON.stringify({url:'http://127.0.0.1:'+server.address().port}));process.stdout.write('ready\\n');});
+  `,root],{stdio:['ignore','pipe','pipe']});
+  t.after(()=>child.kill());
+  await new Promise((resolve,reject)=>{child.stdout.once('data',resolve);child.once('error',reject);child.once('exit',code=>reject(Error('Fixture server stopped: '+code)));});
+  fs.writeFileSync(path.join(root,'data','state.json'),JSON.stringify({adminToken:'fixture-token'}));
+  assert.doesNotThrow(()=>verifyUpdatedService(root,'3.0.0'));
+  assert.throws(()=>verifyUpdatedService(root,'9.0.0'),/authenticated startup checks/);
+  fs.writeFileSync(path.join(root,'data','state.json'),JSON.stringify({adminToken:'wrong-token'}));
+  assert.throws(()=>verifyUpdatedService(root,'3.0.0'),/authenticated startup checks/);
 });

@@ -22,6 +22,8 @@
 <button data-page="practice">✓ &nbsp; My practice</button>
 <button data-page="notebook">▤ &nbsp; Mistake notebook</button>
 <button data-page="interview">◷ &nbsp; Mock interview</button>
+<button data-page="revision">↻ &nbsp; Revision quizzes</button>
+<button data-page="weekly">▦ &nbsp; Weekly report</button>
 <button data-page="settings">⚙ &nbsp; Settings & keys</button>
 </nav>
 <div class="aside-foot">
@@ -104,6 +106,7 @@
 </article>
 </div>
 <div class="card" style="margin-top:16px"><h2>Your next focus</h2><p id="practice-focus">Topic recommendations appear after recorded practice.</p><small id="revision-due"></small></div>
+<div class="card" style="margin-top:16px"><h2>Connection health and recovery</h2><div id="connection-health" class="stack" aria-live="polite"></div><div class="checks"><button id="health-check" type="button">Check all connections</button><button id="health-reconnect" type="button">Reconnect agent</button></div><p id="wake-recovery" class="muted"></p><p class="muted">Startup, network recovery and LeetCode page loads check missed work. Late-day alerts warn at 60 and 15 minutes remaining. Chrome must be running for browser alerts. Stop/pause remains under your control.</p></div>
 <div class="card" style="margin-top:16px"><h2>Daily work has priority</h2><p id="protected-daily-budget"></p><p class="muted">Manual learning and interviews cannot spend the protected allowance. Estimates cover planned drafts; retries may need a higher budget.</p><small id="provider-recovery"></small></div>
 <div class="card" style="margin-top:16px"><h2>AI usage and cost</h2><div id="usage-breakdown"></div><p class="muted">USD estimates use your entered model prices. Unknown prices are not treated as free. Failed or unreported calls retain their maximum token reservation. Provider billing is the source of truth.</p></div>
 <div class="card" style="margin-top:16px">
@@ -194,7 +197,7 @@
 <div class="page-title"><div><span class="eyebrow">LEARN BEFORE REVEALING</span><h1>Work through the problem.</h1><p>Hints and code reviews use your selected AI provider. They do not submit anything to LeetCode.</p></div></div>
 <div class="card"><button id="learn-load" type="button" class="primary">Load current question</button><p>Open a LeetCode problem in the active tab, use the extension popup’s Learn button, then continue here.</p><h2 id="learn-title">No question loaded</h2><p id="learn-statement"></p>
 <div class="checks"><button type="button" data-learn="hint">Get a hint</button><button type="button" data-learn="approach">Explain the approach</button><button type="button" data-learn="solution">Reveal full solution</button></div>
-<label>Your attempt<textarea id="learn-code" rows="12" spellcheck="false" placeholder="Paste your code for a review"></textarea></label><button type="button" data-learn="review">Review my code</button><div id="learn-output" aria-live="polite"></div></div>
+<label>Your attempt<textarea id="learn-code" rows="12" spellcheck="false" placeholder="Paste your code for a review"></textarea></label><button type="button" data-learn="review">Review my code</button><button type="button" data-learn="compare">Compare my approach</button><div id="learn-output" aria-live="polite"></div></div>
 </section>
 <section class="page" id="page-practice" hidden>
 <div class="page-title"><div><span class="eyebrow">YOUR OWN ATTEMPTS</span><h1>Independent practice.</h1><p>Self-reported practice results stay separate from AI-assisted LeetCode acceptances.</p></div></div>
@@ -209,6 +212,14 @@
 <div class="page-title"><div><span class="eyebrow">TIMED PRACTICE</span><h1>Mock interview.</h1><p>The server keeps the deadline across reloads. Hints are limited; AI feedback is a separate explicit request.</p></div></div>
 <form id="interview-start" class="card"><div class="form-grid"><label>Minutes<input name="minutes" type="number" min="10" max="90" value="30" required></label><label>Allowed hints<input name="hintLimit" type="number" min="0" max="5" value="1" required></label></div><button class="primary">Start with current question</button></form>
 <div id="interview-workspace" class="card" hidden><h2 id="interview-title"></h2><strong id="interview-timer"></strong><p id="interview-status"></p><label>Your solution<textarea id="interview-code" rows="14" spellcheck="false"></textarea></label><small>Draft autosaves after a short typing pause. The timer does not pause.</small><div class="checks"><button id="interview-hint" type="button">Use one hint</button><button id="interview-finish" type="button">Finish interview</button><button id="interview-feedback" type="button">Request AI feedback</button></div><div id="interview-result" aria-live="polite"></div><p class="muted">Feedback does not execute your code or certify correctness. Follow-up questions and rubric scores are AI assessments.</p></div>
+</section>
+<section class="page" id="page-revision" hidden>
+<div class="page-title"><div><span class="eyebrow">RECALL YOUR OWN MISTAKES</span><h1>Revision quizzes.</h1><p>Unresolved mistakes come first. Recall the failure type, then reveal your saved explanation. These quizzes never count as daily judge acceptances.</p></div></div>
+<div class="card"><label>History account<input id="revision-account" autocomplete="off" maxlength="40"></label><button id="revision-load" type="button">Load due quizzes</button><p id="revision-summary" class="muted">Choose an account to load its notebook.</p></div><div id="revision-questions" class="stack"></div><div id="revision-feedback" class="card" hidden aria-live="polite"></div>
+</section>
+<section class="page" id="page-weekly" hidden>
+<div class="page-title"><div><span class="eyebrow">LAST SEVEN LOCAL DAYS</span><h1>Your weekly report.</h1><p>Daily judge results, independent practice and notebook recall stay separate. Missing records are shown as unknown.</p></div></div>
+<div class="card"><label>History account<input id="weekly-account" autocomplete="off" maxlength="40"></label><div class="checks"><button id="weekly-load" type="button">Load weekly report</button><button id="weekly-download" type="button" disabled>Download report</button></div></div><div id="weekly-report" class="stack" aria-live="polite"></div>
 </section>
 <section class="page" id="page-settings" hidden>
 <div class="page-title">
@@ -287,7 +298,7 @@
 <label>Groq input USD / million tokens<input name="groqInput" type="number" min="0" max="10000" step="any" placeholder="Unknown"></label><label>Groq output USD / million tokens<input name="groqOutput" type="number" min="0" max="10000" step="any" placeholder="Unknown"></label><label>Gemini input USD / million tokens<input name="geminiInput" type="number" min="0" max="10000" step="any" placeholder="Unknown"></label><label>Gemini output USD / million tokens<input name="geminiOutput" type="number" min="0" max="10000" step="any" placeholder="Unknown"></label></div>
 <p class="muted">Enter prices for the selected models. A daily cost limit requires known prices for the provider being called. Additional cases are generated suggestions; passing them cannot prove hidden-test correctness.</p><button class="primary">Save practice controls</button></form>
 <div class="card"><h2>Backups and diagnostics</h2><div class="checks"><button id="export-backup" type="button">Export settings and history</button><label>Restore a backup<input id="restore-file" type="file" accept=".json,application/json"></label><button id="restore-backup" type="button">Restore selected backup</button><button id="support-report" type="button">Export diagnostic report</button></div><p class="muted">Exports omit provider keys, login cookies and connection tokens. Restoring merges history, keeps current credentials and pauses Auto Mode. Diagnostic reports also omit account names, statements and source code.</p></div>
-<div class="card"><h2>Safe updates and rollback</h2><label>Release ZIP<input id="update-file" type="file" accept=".zip,application/zip"></label><button id="prepare-update" type="button">Check selected release</button><p id="update-plan">Select a release you trust. Compatibility is checked before installation. Updates restart the server and preserve runtime data.</p><button id="install-update" type="button" hidden>Install checked release</button><div class="checks"><button id="list-rollbacks" type="button">Load restore points</button><select id="rollback-id" aria-label="Restore point"></select><button id="rollback-update" type="button">Restore selected code version</button></div><p id="update-status" aria-live="polite"></p></div>
+<div class="card"><h2>Safe updates and rollback</h2><label>Release ZIP<input id="update-file" type="file" accept=".zip,application/zip"></label><button id="prepare-update" type="button">Check selected release</button><p id="update-plan">Select a release you trust. Compatibility, source syntax and required assets are checked before installation. A private restore point is saved. Authenticated startup checks must pass or the previous code is restored.</p><button id="install-update" type="button" hidden>Install checked release</button><div class="checks"><button id="list-rollbacks" type="button">Load restore points</button><select id="rollback-id" aria-label="Restore point"></select><button id="rollback-update" type="button">Restore selected code version</button></div><p id="update-status" aria-live="polite"></p></div>
 <p id="provider-fallback" class="muted">No provider has generated a solution yet.</p>
 <form id="platform-form" class="card">
 <h2>Question platform</h2>
@@ -324,5 +335,6 @@
 </script>
 <script src="advanced.js"></script>
 <script src="practice-plus.js"></script>
+<script src="reliability-ui.js"></script>
 </body>
 </html>

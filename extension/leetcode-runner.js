@@ -1,3 +1,14 @@
+export function unresolvedSubmission(runs,username,titleSlug){
+  const rows=Object.values(runs).filter(run=>run.username?.toLowerCase()===username?.toLowerCase()).flatMap(run=>(run.tasks||[]).filter(task=>task.problem?.titleSlug===titleSlug).map(task=>({task,date:run.date})));
+  const keys=(record,date)=>[record.submissionId?'id:'+record.submissionId:'',record.fingerprint&&record.at?`${date}:${record.at}:${record.fingerprint}`:''].filter(Boolean);
+  const resolved=new Set(rows.flatMap(({task,date})=>(task.submissionHistory||[]).filter(r=>['accepted','rejected'].includes(r.status)).flatMap(r=>keys(r,date))));
+  return rows.find(({task,date})=>{
+    const record=task.submissionHistory?.at(-1);
+    if(record?.status==='unknown')return !keys(record,date).some(key=>resolved.has(key));
+    return !record&&(task.status==='submitting'||task.status==='blocked'&&/may have been sent before restart/i.test(task.feedback||''));
+  })?.task;
+}
+
 const TERMINAL = new Set(['completed', 'prepared', 'review', 'failed', 'blocked', 'stopped', 'interrupted']);
 const ACTIVE = new Set(['discovering', 'running', 'stopping']);
 const DAILY_SUBMISSION_LIMIT = 2;
@@ -130,6 +141,15 @@ export class LeetCodeRunner {
       if(run.target&&run.tasks.filter(t=>t.status==='accepted').length===run.target&&(run.mode==='manual'||hasAcceptedQotd(run))){run.status='completed';delete run.reviewRequired;run.finishedAt=this.io.now().toISOString();run.feedback='Recovered LeetCode results after browser restart';}
       await this.io.save(run);
     }
+    for(const run of Object.values(runs)){
+      if(username&&run.username?.toLowerCase()!==username.toLowerCase())continue;
+      if(run.reviewReason!=='uncertain-submission')continue;
+      let changed=false;
+      for(const task of run.tasks||[])if(task.status==='blocked'&&/^An earlier submission result/.test(task.feedback||'')&&!unresolvedSubmission(runs,run.username,task.problem?.titleSlug)){
+        task.status='interrupted';task.feedback='Earlier judge result was recovered. Remaining work can resume.';changed=true;
+      }
+      if(changed&&!run.tasks.some(t=>t.status==='blocked')){run.status='interrupted';delete run.reviewRequired;delete run.reviewReason;delete run.nextResultCheckAt;await this.io.save(run);}
+    }
   }
   async recordSubmission(slug,submissionId,username){
     const run=this.currentRun;
@@ -235,6 +255,11 @@ export class LeetCodeRunner {
       await this.io.save(run);
       for (const task of run.tasks) {
         const reviewTask=config.reviewBeforeSubmit&&manual;
+        const uncertain=unresolvedSubmission(runs,run.username,task.problem.titleSlug);
+        if(uncertain){
+          task.status='blocked';task.feedback='An earlier submission result is still unknown. Recover its judge result or check LeetCode submission history before retrying.';
+          run.reviewRequired=true;run.reviewReason='uncertain-submission';await this.io.save(run);break;
+        }
         const priorTasks=priorTasksFor(task.problem.titleSlug);
         const priorSubmissionKeys=new Set(priorTasks.flatMap(t=>(t.submissionHistory||[]).map(a=>
           a.submissionId?`id:${a.submissionId}`:`attempt:${a.at}:${a.fingerprint}`)));

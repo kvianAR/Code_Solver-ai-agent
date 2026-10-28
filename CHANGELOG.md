@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.2.0 — Recovery, revision and checked updates
+
+- Resume missed daily work on startup, network recovery and LeetCode page loads. Merge accepted progress across same-day account archives, retaining QOTD first. Recheck login promptly after a wake gap or interrupted run.
+- Warn once per account at 60 and 15 minutes before the local day ends when allotted acceptances or QOTD are pending. Show the current blocker, including a cached offline diagnosis.
+- Add an extension/server/login/provider health panel with explicit reconnect and the last missed-run recovery. Checks do not spend provider generation tokens.
+- Block new automatic or manual submissions while an older judge result for that account/question remains unknown, including previous dates. Reconcile recovered archived results before releasing the guard.
+- Add personal mistake quizzes with due dates, saved-lesson reveals and first-answer daily scoring. Correct recalls return after three days; missed recalls return the next day.
+- Compare the user's code with an alternative approach, including invariants, time/space complexity and tradeoffs. Comparison is an optional, budgeted learning call and never submits code.
+- Add an account-specific seven-day report with daily/QOTD completion, separate independent and assisted practice, mistake categories and notebook quiz recall. Missing records stay unknown; historical target estimates are labelled.
+- Check release syntax, local dependencies and dashboard assets before installation. Keep a private code/settings/key restore point, then require authenticated version/API/syntax service checks after restart. Restore prior code on failure and report a failed restore honestly. UI waits for completed update checks.
+
+Daily progress and revision scores are included in credential-free backups, with validated duplicate-safe restore. Chrome must be running for browser alerts and live submissions; after midnight, recovery follows the current local day's QOTD. Explicit Stop/pause, account isolation, contest pauses, protected daily budgets and submission limits remain enforced. QOTD plus the full daily allotment still need accepted judge results.
+
 ## 3.1.1 — Compact extension popup
 
 - Fit status, daily progress, seven-day history, schedule reason and all actions into a compact popup.
