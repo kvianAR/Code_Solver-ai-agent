@@ -1,3 +1,4 @@
+import {retryTime,bridgeError} from '../extension/retry-policy.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -39,7 +40,7 @@ async function runPoll(due,precheck=false,sessionResponse={ok:true,value:{signed
     async recover(){}
     start(...args){started.push(args);this.done=Promise.resolve();return {started:true,id:'automatic:2026-10-06:testuser'};}
   }
-  runInNewContext(source,{qotdSatisfied,acceptedDailyTasks,dailyQotdDisposition,deadlineNotice,connectionHealth,readinessTarget,chrome,LeetCodeRunner:Runner,activeContest:()=>null,contestRefreshDue:()=>false,
+  runInNewContext(source,{retryTime,bridgeError,qotdSatisfied,acceptedDailyTasks,dailyQotdDisposition,deadlineNotice,connectionHealth,readinessTarget,chrome,LeetCodeRunner:Runner,activeContest:()=>null,contestRefreshDue:()=>false,
     localClock:()=>({date:'2026-10-06',time:'12:00'}),dailyRunForAccount:()=>null,
     latestArchivedAutomaticRun:()=>null,automaticRetryDecision:()=>({due}),loginPrecheckDue:()=>precheck,
     archiveRetryableAutomaticRun:()=>false,shouldRetryForLaterSchedule:()=>false,
@@ -92,4 +93,10 @@ test('a wake-up catch-up retains accepted archived work instead of starting the 
   const result=await runPoll(true,false,undefined,{lastPollAt:Date.now()-3600000,leetcodeRuns:{archive:run}});
   assert.equal(result.started.length,1);assert.equal(result.started[0][5].length,1);
   assert.equal(result.saved.wakeRecovery.acceptedRetained,1);assert.match(result.saved.dailyDiagnostic.message,/resumed now/);
+});
+
+test('an active LeetCode cooldown suppresses all browser requests and arms an exact automatic retry',async()=>{
+  const until=new Date(Date.now()+120000).toISOString();
+  const result=await runPoll(true,false,undefined,{leetcodeCooldown:{until,failures:1}});
+  assert.equal(result.started.length,0);assert.equal(result.created.length,0);assert.equal(result.saved.dailyDiagnostic.kind,'retrying');assert.equal(result.saved.dailyDiagnostic.nextRetryAt,until);
 });

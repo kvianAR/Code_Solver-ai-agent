@@ -14,7 +14,7 @@ export function dailyProtection(store,date){
 }
 export function recordDailyProgress(store,input){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(input.date||'')||!/^[\w-]{1,40}$/.test(input.username||'')||!Number.isInteger(input.accepted)||input.accepted<0||input.accepted>100||typeof input.qotdAccepted!=='boolean')throw Error('Invalid daily progress');
-  if(input.qotdExempt!==undefined&&!['','already-accepted','three-approaches-failed'].includes(input.qotdExempt))throw Error('Invalid QOTD disposition');
+  if(input.qotdExempt!==undefined&&!['','already-accepted','three-approaches-failed','draft-preparation-failed'].includes(input.qotdExempt))throw Error('Invalid QOTD disposition');
   store.state.dailyProgress||={};store.state.dailyProgress[input.date]||={};
   store.state.dailyProgress[input.date]['account:'+input.username.toLowerCase()]={accepted:input.accepted,target:store.state.config.dailyQuestionCount,qotdAccepted:input.qotdAccepted,qotdExempt:input.qotdExempt||'',at:new Date().toISOString()};
   const cutoff=new Date(Date.parse(input.date+'T00:00:00Z')-14*86400000).toISOString().slice(0,10);

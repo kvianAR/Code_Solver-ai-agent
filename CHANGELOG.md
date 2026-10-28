@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.3.1 — Recover rate limits without an hourly stall
+
+- Honor Retry-After seconds and HTTP dates. Persist a browser-wide LeetCode cooldown across tabs/restarts, with one-minute exponential backoff up to 15 minutes when no deadline is provided. Never change questions to evade a server throttle.
+- Arm an exact retry alarm instead of putting temporary Run Code failures into the unrelated hourly scheduler. Recheck login when that retry is due, even if the agent's temporary tab was closed.
+- Pace judge reads at least three seconds apart and judge writes at least ten seconds apart. Remove a duplicate login request immediately after a verified submission and stop rapid GraphQL retries on HTTP 429.
+- Persist code/account/question/input-bound preflight checkpoints for ten minutes. Resume pending Run Code polling after a cooldown, retain already-passed official examples during boundary-case recovery, and avoid reposting the same test. Validate checkpoint context before reuse.
+- Keep cached drafts even after earlier rejected drafts, and label their reuse accurately rather than presenting zero new AI calls as zero work.
+- Replace a stalled automatic question after three unusable/repeated draft preparation attempts. Record that reason separately from three different failed algorithms and retain the three-skips-per-account/day cap. A model repetition no longer produces an endless wait on the same question.
+- Distinguish an explicit rejected submit HTTP 429 from a lost response: definitely-unsent requests do not consume judged slots; unknown submissions still block duplicates and recover their original ID.
+- Do not replay a potentially-sent judged submission when a browser message port closes. Inject a missing content bridge only when there was no receiving endpoint.
+- Migrate old temporary waiting labels to automatic retry with a resume time. Spread the daily selection note across both grid columns so question cards start together.
+- Freeze the last valid saved interview code at expiry; a late Finish request cannot overwrite it.
+
+No code change can force LeetCode to accept requests during a server-side rate limit or guarantee accepted solutions during outages. Tests exercise mocked network/judge responses; live installed-extension verification remains separate.
+
 ## 3.3.0 — Three-approach retries and Easy replacements
 
 - Replace an already-accepted QOTD with the full configured count of other untouched questions; retain current-day accepted progress on retries.

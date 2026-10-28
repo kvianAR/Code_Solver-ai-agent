@@ -4,13 +4,30 @@
   const ROADMAP = [
     'contains-duplicate','valid-anagram','valid-palindrome','best-time-to-buy-and-sell-stock','binary-search','valid-parentheses','merge-sorted-array','remove-duplicates-from-sorted-array','move-zeroes','majority-element','intersection-of-two-arrays','single-number','missing-number','reverse-string','first-unique-character-in-a-string','ransom-note','isomorphic-strings','word-pattern','linked-list-cycle','middle-of-the-linked-list','reverse-linked-list','merge-two-sorted-lists','maximum-depth-of-binary-tree','same-tree','invert-binary-tree','symmetric-tree','diameter-of-binary-tree','balanced-binary-tree','flood-fill','number-of-islands','climbing-stairs','min-cost-climbing-stairs','house-robber','maximum-subarray','product-of-array-except-self','top-k-frequent-elements','group-anagrams','longest-substring-without-repeating-characters','three-sum','container-with-most-water','search-in-rotated-sorted-array','find-minimum-in-rotated-sorted-array','combination-sum','permutations','subsets','word-search','validate-binary-search-tree','binary-tree-level-order-traversal','lowest-common-ancestor-of-a-binary-search-tree','kth-smallest-element-in-a-bst','course-schedule','clone-graph','rotting-oranges','coin-change','longest-increasing-subsequence','unique-paths','decode-ways','longest-common-subsequence','merge-intervals','insert-interval','trapping-rain-water','minimum-window-substring','median-of-two-sorted-arrays','serialize-and-deserialize-binary-tree','word-ladder'
   ];
+  let nextJudgeRequestAt=0,nextJudgeWriteAt=0;
+  const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  async function judgeFetch(url,options){
+    const write=options?.method==='POST',delay=Math.max(nextJudgeRequestAt,write?nextJudgeWriteAt:0)-Date.now();if(delay>0)await pause(delay);
+    nextJudgeRequestAt=Date.now()+3000;if(write)nextJudgeWriteAt=Date.now()+10000;
+    return fetch(url,options);
+  }
+  function responseError(response,message,extra={}){
+    const error=Object.assign(Error(message),extra);
+    if(response.status===429){
+      const header=response.headers?.get?.('retry-after');
+      const seconds=header&&/^\d+(?:\.\d+)?$/.test(header.trim())?Number(header):NaN;
+      const date=Number.isFinite(seconds)?Date.now()+seconds*1000:Date.parse(header||'');
+      error.retryAfterProvided=Number.isFinite(date);error.kind='rate';error.retryAt=new Date(Math.max(Date.now()+1000,Number.isFinite(date)?date:Date.now()+60000)).toISOString();
+    }else if(response.status>=500)error.kind='temporary';
+    return error;
+  }
   async function graphql(query, variables = {}) {
     for(let attempt=0;attempt<3;attempt++){
       try{
         const response = await fetch('/graphql/', {method:'POST',credentials:'include',headers:{'content-type':'application/json','x-requested-with':'XMLHttpRequest'},body:JSON.stringify({query,variables})});
         if(!response.ok){
-          if((response.status===429||response.status>=500)&&attempt<2){await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));continue;}
-          throw Error(`LeetCode connection failed (${response.status})`);
+          if(response.status>=500&&attempt<2){await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));continue;}
+          throw responseError(response,`LeetCode connection failed (${response.status})`);
         }
         const value=await response.json();if(value.errors?.length)throw Error(value.errors[0].message||'LeetCode GraphQL error');return value.data;
       }catch(error){
@@ -35,7 +52,7 @@
         for(const item of list?.questions||[])if(item?.titleSlug&&!seen.has(item.titleSlug)&&!item.paidOnly&&item.status==null&&allowed.has(item.difficulty))candidates.push({slug:item.titleSlug,weak:(item.topicTags||[]).some(t=>weakTopics.includes(t.name))});
         if(!list||skip+100>=list.total)break;
       }
-    }catch(error){if(weakTopics.length)return problemsetSlugs(allowed,seen,wanted,[]);throw Error(`LeetCode question list unavailable: ${error.message}`);}
+    }catch(error){if(error.kind==='rate')throw error;if(weakTopics.length)return problemsetSlugs(allowed,seen,wanted,[]);throw Error(`LeetCode question list unavailable: ${error.message}`);}
     if(!candidates.length&&weakTopics.length)return problemsetSlugs(allowed,seen,wanted,[]);
     return shuffle(candidates).sort((a,b)=>Number(b.weak)-Number(a.weak)).map(item=>item.slug);
   }
@@ -63,7 +80,7 @@
           else if(full&&!full.paidOnly){full.selection='QOTD';full.alreadyAcceptedToday=(options.acceptedTodaySlugs||[]).includes(full.titleSlug);chosen.push(full);seen.add(full.titleSlug);qotdNote=`QOTD selected: ${full.title}.`;}
           else {if(options.requireQotd)throw Error('Today’s QOTD is unavailable or Premium');qotdNote='QOTD is unavailable or Premium; using another question.';}
         }
-      }catch(error){if(options.requireQotd)throw Error(`QOTD required: ${error.message}`);qotdNote='QOTD lookup failed; using another question.';}
+      }catch(error){if(error.kind==='rate')throw error;if(options.requireQotd)throw Error(`QOTD required: ${error.message}`);qotdNote='QOTD lookup failed; using another question.';}
     }
     for(const slug of (options.retrySlugs||[]).slice(0,10)){
       if(chosen.length>=options.count)break;
@@ -100,19 +117,27 @@
     const csrf=document.cookie.split('; ').find(value=>value.startsWith('csrftoken='))?.split('=').slice(1).join('=');
     if(!csrf)throw Error('LeetCode session token unavailable. Reload the LeetCode tab and sign in again.');
     const invalid=value=>!value.runtime_error&&!value.compile_error&&/invalid.*test|testcase.*invalid|invalid input/i.test([value.error,value.status_msg,value.message].filter(Boolean).join(' '));
-    async function check(input){
-      const response=await fetch(`/problems/${encodeURIComponent(problem.titleSlug)}/interpret_solution/`,{
+    let checkpoint=problem.preflightCheckpoint;
+    const context={slug:problem.titleSlug,questionId:String(problem.id),language:problem.langSlug||'python3',code,examples:problem.exampleTestcases,username:user.username};
+    const validCheckpoint=checkpoint&&Date.now()-Date.parse(checkpoint.createdAt)<10*60000&&Date.parse(checkpoint.createdAt)<=Date.now()&&Object.entries(context).every(([key,value])=>checkpoint[key]===value);
+    if(!validCheckpoint)checkpoint=null;
+    const snapshot=(stage,input,runId,officialPassed=false)=>({...context,stage,input,runId,officialPassed,createdAt:checkpoint?.createdAt||new Date().toISOString()});
+    async function check(input,stage,officialPassed=false){
+      let runId=checkpoint?.stage===stage&&checkpoint.input===input?checkpoint.runId:'';
+      if(!runId){
+      const response=await judgeFetch(`/problems/${encodeURIComponent(problem.titleSlug)}/interpret_solution/`,{
         method:'POST',credentials:'include',headers:{'content-type':'application/json','x-csrftoken':decodeURIComponent(csrf),'x-requested-with':'XMLHttpRequest'},
         body:JSON.stringify({lang:problem.langSlug||'python3',question_id:String(problem.id),typed_code:code,data_input:input})
       });
-      if(!response.ok)throw Error(`LeetCode Run Code unavailable (${response.status}); no judged submission was sent`);
-      const result=await response.json(),runId=result.interpret_id||result.interpretId;
+      if(!response.ok)throw responseError(response,`LeetCode Run Code unavailable (${response.status}); no judged submission was sent`,{checkpoint:officialPassed?snapshot(stage,input,'',true):undefined});
+      const result=await response.json();runId=result.interpret_id||result.interpretId;
       if(invalid(result))return {ok:false,invalidInput:true,feedback:'LeetCode rejected the custom input format or constraints'};
       if(!runId)throw Error('LeetCode Run Code did not return a run id; no judged submission was sent');
-      for(let attempt=0;attempt<45;attempt++){
-        await wait(1000);
-        const response=await fetch(`/submissions/detail/${runId}/check/`,{credentials:'include',headers:{'x-requested-with':'XMLHttpRequest'}});
-        if(!response.ok)throw Error(`LeetCode Run Code result unavailable (${response.status}); no judged submission was sent`);
+      }
+      for(let attempt=0;attempt<25;attempt++){
+        await wait(Math.min(3000,1000+attempt*1000));
+        const response=await judgeFetch(`/submissions/detail/${runId}/check/`,{credentials:'include',headers:{'x-requested-with':'XMLHttpRequest'}}).catch(error=>{error.checkpoint=snapshot(stage,input,String(runId),officialPassed);throw error;});
+        if(!response.ok)throw responseError(response,`LeetCode Run Code result unavailable (${response.status}); no judged submission was sent`,{checkpoint:snapshot(stage,input,String(runId),officialPassed)});
         const judged=await response.json();
         if(invalid(judged))return {ok:false,invalidInput:true,feedback:'LeetCode rejected the generated custom inputs'};
         if(judged.state!=='SUCCESS')continue;
@@ -123,24 +148,24 @@
         const feedback=[judged.status_msg,judged.compile_error,judged.runtime_error,judged.last_testcase&&`Testcase: ${judged.last_testcase}`,expected&&`Expected: ${JSON.stringify(expected)}`,actual&&`Output: ${JSON.stringify(actual)}`].filter(Boolean).join(' ');
         return {ok,feedback:ok?'LeetCode reference checks passed':feedback||'LeetCode checks did not pass'};
       }
-      throw Error('LeetCode Run Code timed out; no judged submission was sent');
+      throw Object.assign(Error('LeetCode Run Code timed out; no judged submission was sent'),{checkpoint:snapshot(stage,input,String(runId),officialPassed)});
     }
-    const examples=await check(problem.exampleTestcases);
+    const examples=checkpoint?.officialPassed?{ok:true,feedback:'Official examples passed before the temporary interruption'}:await check(problem.exampleTestcases,'examples');
     if(!examples.ok)return {...examples,extraCases:0,extraStatus:'not-run'};
     const extra=[...new Set((problem.additionalTestcases||[]).filter(t=>typeof t.input==='string'&&t.input.trim()&&t.input.length<=4096&&t.input.trim()!==problem.exampleTestcases.trim()).slice(0,4).map(t=>t.input.trim()))];
     if(!extra.length)return {...examples,extraCases:0,extraStatus:'not-provided'};
-    const boundary=await check(extra.join('\n'));
+    const boundary=await check(extra.join('\n'),'boundary',true);
     if(boundary.invalidInput)return {ok:true,extraCases:0,extraStatus:'invalid-input',feedback:'Official examples passed. Generated inputs were invalid and were not counted as correctness checks.'};
     return {...boundary,extraCases:extra.length,extraStatus:boundary.ok?'passed':'solution-failed'};
   }
-  async function submissionResult(submissionId,expectedUsername){
+  async function submissionResult(submissionId,expectedUsername,verifiedUser=null){
     if(!/^[a-zA-Z0-9_-]+$/.test(String(submissionId)))throw Error('Invalid submission id');
-    const user=(await graphql(USER_QUERY)).userStatus;
+    const user=verifiedUser||(await graphql(USER_QUERY)).userStatus;
     if(!user?.isSignedIn||expectedUsername&&user.username.toLowerCase()!==expectedUsername.toLowerCase())throw Error('Sign in to the original LeetCode account to recover this submission');
-    for(let attempt=0;attempt<45;attempt++){
-      await wait(1000);
-      const check=await fetch(`/submissions/detail/${submissionId}/check/`,{credentials:'include',headers:{'x-requested-with':'XMLHttpRequest'}});
-      if(!check.ok)throw Error(`LeetCode result check failed (${check.status})`);
+    for(let attempt=0;attempt<25;attempt++){
+      await wait(Math.min(3000,1000+attempt*1000));
+      const check=await judgeFetch(`/submissions/detail/${submissionId}/check/`,{credentials:'include',headers:{'x-requested-with':'XMLHttpRequest'}});
+      if(!check.ok)throw responseError(check,`LeetCode result check failed (${check.status})`);
       const result=await check.json();
       if(result.state!=='SUCCESS'&&!result.status_msg)continue;
       const accepted=result.status_msg==='Accepted'||result.status_code===10;
@@ -155,15 +180,15 @@
     if(expectedUsername&&user.username.toLowerCase()!==expectedUsername.toLowerCase())throw Error(`LeetCode account changed during submission: ${user.username}`);
     const csrf=document.cookie.split('; ').find(value=>value.startsWith('csrftoken='))?.split('=').slice(1).join('=');
     if(!csrf)throw Error('LeetCode session token unavailable. Reload the LeetCode tab and sign in again.');
-    const response=await fetch(`/problems/${encodeURIComponent(problem.titleSlug)}/submit/`,{
+    const response=await judgeFetch(`/problems/${encodeURIComponent(problem.titleSlug)}/submit/`,{
       method:'POST',credentials:'include',headers:{'content-type':'application/json','x-csrftoken':decodeURIComponent(csrf),'x-requested-with':'XMLHttpRequest'},
       body:JSON.stringify({lang:problem.langSlug||'python3',question_id:String(problem.id),typed_code:code})
     });
-    if(!response.ok)throw Error(`LeetCode submission failed (${response.status})`);
+    if(!response.ok)throw responseError(response,`LeetCode submission failed (${response.status})`,{submissionSent:response.status===429?false:undefined});
     const submitted=await response.json(),submissionId=submitted.submission_id||submitted.submissionId;
     if(!submissionId)throw Error('LeetCode did not return a submission id');
     await chrome.runtime.sendMessage?.({type:'leetcode-submission-started',slug:problem.titleSlug,submissionId:String(submissionId),username:user.username});
-    return submissionResult(submissionId,expectedUsername);
+    return submissionResult(submissionId,expectedUsername,user);
   }
-  chrome.runtime.onMessage.addListener((message,_sender,sendResponse)=>{if(!['leetcode-discover','leetcode-session','leetcode-submit','leetcode-preflight','leetcode-result'].includes(message?.type))return;(async()=>{if(message.type==='leetcode-discover')return discover(message.options||{});if(message.type==='leetcode-submit')return submit(message.problem,message.code,message.username);if(message.type==='leetcode-result')return submissionResult(message.submissionId,message.username);if(message.type==='leetcode-preflight')return preflight(message.problem,message.code,message.username);const user=(await graphql(USER_QUERY)).userStatus;return{signedIn:!!user?.isSignedIn,username:user?.username||''};})().then(value=>sendResponse({ok:true,value})).catch(error=>sendResponse({ok:false,error:error.message}));return true;});
+  chrome.runtime.onMessage.addListener((message,_sender,sendResponse)=>{if(!['leetcode-discover','leetcode-session','leetcode-submit','leetcode-preflight','leetcode-result'].includes(message?.type))return;(async()=>{if(message.type==='leetcode-discover')return discover(message.options||{});if(message.type==='leetcode-submit')return submit(message.problem,message.code,message.username);if(message.type==='leetcode-result')return submissionResult(message.submissionId,message.username);if(message.type==='leetcode-preflight')return preflight(message.problem,message.code,message.username);const user=(await graphql(USER_QUERY)).userStatus;return{signedIn:!!user?.isSignedIn,username:user?.username||''};})().then(value=>sendResponse({ok:true,value})).catch(error=>sendResponse({ok:false,error:error.message,...Object.fromEntries(['retryAt','retryAfterProvided','kind','checkpoint','submissionSent'].filter(k=>error[k]!==undefined).map(k=>[k,error[k]]))}));return true;});
 })();

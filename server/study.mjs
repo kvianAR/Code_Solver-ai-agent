@@ -63,7 +63,7 @@ export function releaseInterviewHint(store,ticket){if(ticket&&!ticket.finished){
 export function finishInterview(store,input,now=Date.now()){
   const row=interview(store,input.id,input.username);
   if(typeof input.code!=='string'||input.code.length>60000)throw Error('Paste a solution smaller than 60,000 characters');
-  if(row.status==='active'){row.status=now>=Date.parse(row.deadline)?'expired':'finished';row.finishedAt=new Date(now).toISOString();row.code=input.code;store.save();}
+  if(row.status==='active'){row.status=now>=Date.parse(row.deadline)?'expired':'finished';row.finishedAt=new Date(now).toISOString();row.code=now>=Date.parse(row.deadline)?row.code||'':input.code;store.save();}
   return row;
 }
 export function saveInterviewDraft(store,input,now=Date.now()){

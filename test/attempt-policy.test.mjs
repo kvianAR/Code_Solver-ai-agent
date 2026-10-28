@@ -38,18 +38,18 @@ test('the third skipped question stops the daily run, notifies, and cannot be re
  const retry=fixture({initial:f.runs});retry.runner.start(config,false,2,username);await retry.runner.done;assert.equal(retry.calls.solve.length,0);assert.equal(retry.calls.discover.length,0);assert.equal(retry.calls.notices.length,1);
  const other=fixture({initial:f.runs});other.runner.io.session=async()=> 'Other';other.runner.io.discover=async()=>({username:'Other',qotdAlreadyAccepted:'old',questions:[q('other-one'),q('other-two')]});other.runner.start(config,false,2,'Other');await other.runner.done;assert.equal(Object.values(other.runs).find(r=>r.username==='Other').status,'completed');
 });
-test('429 is waiting, not an approach failure or skip, and untried work stays queued',async()=>{
+test('429 schedules a timed retry, not an approach failure or skip, and untried work stays queued',async()=>{
  const f=fixture({network:true});f.runner.start(config,false,2,username);await f.runner.done;const run=Object.values(f.runs)[0];
- assert.equal(run.status,'waiting');assert.deepEqual(run.tasks.map(t=>t.status),['waiting','queued']);assert.equal(run.skipCount,0);assert.equal(f.calls.submit.length,0);assert.equal(run.tasks[0].approachHistory[0].status,'prepared');assert.equal(run.nextRetryAt,'2026-10-28T06:30:00.000Z');
+ assert.equal(run.status,'retrying');assert.deepEqual(run.tasks.map(t=>t.status),['retrying','queued']);assert.equal(run.skipCount,0);assert.equal(f.calls.submit.length,0);assert.equal(run.tasks[0].approachHistory[0].status,'prepared');assert.equal(run.nextRetryAt,'2026-10-28T06:01:00.000Z');
 });
-test('repeated algorithms or identical code never count as three different failed approaches',async()=>{
+test('repeated algorithms trigger bounded preparation replacement without claiming three different algorithms',async()=>{
  const f=fixture({fail:()=>true,repeated:true});f.runner.start(config,false,2,username);await f.runner.done;const run=Object.values(f.runs)[0];
- assert.equal(run.status,'waiting');assert.equal(run.skipCount,0);assert.equal(f.calls.submit.length,1);assert.equal(run.tasks[0].approachHistory.length,1);assert.match(run.tasks[0].feedback,/repeated an approach/);
+ assert.equal(run.status,'blocked');assert.equal(run.reviewReason,'daily-skip-limit');assert.equal(run.skipCount,3);assert.equal(f.calls.submit.length,3);
+ for(const task of run.tasks.filter(t=>t.status==='skipped')){assert.equal(task.skipReason,'draft-preparation-failed');assert.equal(task.approachHistory.length,1);assert.equal(task.preparationFailures,3);}
 });
-
 test('failed approach history survives a service outage and resumption without resetting the three-approach cap',async()=>{
  const f=fixture({fail:slug=>slug==='qotd'});let checks=0;f.runner.io.preflight=async(problem)=>{if(problem.titleSlug==='qotd'&&++checks===2)throw Error('Run Code unavailable (429)');return {ok:true};};
- f.runner.start(config,false,2,username);await f.runner.done;const old=Object.values(f.runs)[0];assert.equal(old.status,'waiting');assert.equal(old.tasks[0].submissionAttempts,1);
+ f.runner.start(config,false,2,username);await f.runner.done;const old=Object.values(f.runs)[0];assert.equal(old.status,'retrying');assert.equal(old.tasks[0].submissionAttempts,1);
  archiveRetryableAutomaticRun(f.runs,old.id,'automatic-history:outage');const retry=fixture({initial:f.runs,fail:slug=>slug==='qotd'});
  retry.runner.start(config,false,2,username);await retry.runner.done;const run=Object.values(retry.runs).find(r=>r.id===old.id);
  assert.equal(run.status,'completed',JSON.stringify({run,calls:retry.calls}));assert.equal(run.skipCount,1);assert.equal(retry.calls.submit.filter(s=>s==='qotd').length,2);assert.equal(run.tasks[0].approachHistory.filter(a=>a.status==='rejected').length,3);
@@ -63,4 +63,20 @@ test('stopping an in-flight result does not prevent reconciliation or permit an 
 test('Stop preserves skipped-question evidence and the daily cap',async()=>{
  const f=fixture();const run={id:'stopping',date,mode:'automatic',username,status:'running',tasks:[{status:'skipped',skipReason:'three-approaches-failed',problem:q('failed')},{status:'drafting',problem:q('remaining')}]};
  await f.runner.finishStopped(run);assert.equal(f.runs.stopping.tasks[0].status,'skipped');assert.equal(f.runs.stopping.tasks[1].status,'stopped');
+});
+
+test('a server retry deadline drives automatic recovery and keeps a cached draft and checkpoint',async()=>{
+ const f=fixture();f.runner.io.preflight=async()=>{throw Object.assign(Error('Run Code result unavailable (429)'),{kind:'rate',retryAt:'2026-10-28T06:03:00.000Z',checkpoint:{runId:'pending-test'}});};
+ f.runner.start(config,false,2,username);await f.runner.done;const run=Object.values(f.runs)[0];assert.equal(run.status,'retrying');assert.equal(run.nextRetryAt,'2026-10-28T06:03:00.000Z');assert.equal(run.tasks[0].preflightCheckpoint.runId,'pending-test');
+ assert.equal(automaticRetryDecision(run,config,new Date('2026-10-28T06:02:59Z')).due,false);assert.equal(automaticRetryDecision(run,config,new Date('2026-10-28T06:03:00Z')).due,true);
+ archiveRetryableAutomaticRun(f.runs,run.id,'automatic-history:rate');const retry=fixture({initial:f.runs});const checkpoints=[];
+ retry.runner.io.preflight=async(problem)=>{checkpoints.push(problem.preflightCheckpoint);return {ok:true};};retry.runner.start(config,false,2,username);await retry.runner.done;
+ assert.equal(checkpoints[0]?.runId,'pending-test');assert.equal(Object.values(retry.runs).find(r=>r.id===run.id).tasks[0].reusedDrafts,1);
+ assert.equal(retry.calls.solve.some(r=>r.slug==='qotd'),false);assert.equal(Object.values(retry.runs).find(r=>r.id===run.id).status,'completed');
+});
+test('an explicitly rejected HTTP 429 submit request does not consume a judged slot or create an unknown result',async()=>{
+ const f=fixture();f.runner.io.submit=async()=>{throw Object.assign(Error('LeetCode submission failed (429)'),{submissionSent:false,kind:'rate',retryAt:'2026-10-28T06:02:00Z'});};
+ f.runner.start(config,false,2,username);await f.runner.done;const run=Object.values(f.runs)[0],task=run.tasks[0];
+ assert.equal(run.status,'retrying');assert.equal(run.reviewRequired,undefined);assert.equal(task.submissionAttempts,0);assert.equal(task.submissionHistory.length,0);assert.equal(task.submittedCodeFingerprints.length,0);assert.equal(task.submissionTransportFailures,1);
+ assert.equal(run.nextRetryAt,'2026-10-28T06:02:00.000Z');
 });

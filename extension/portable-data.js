@@ -8,7 +8,7 @@
   }
   function runs(value){
     if(!value||Array.isArray(value)||typeof value!=='object'||Object.keys(value).length>2000)throw Error('Invalid extension history');
-    const allowed=['completed','review','failed','blocked','waiting','stopped','interrupted','prepared','running','discovering','stopping'];
+    const allowed=['completed','review','failed','blocked','waiting','retrying','stopped','interrupted','prepared','running','discovering','stopping'];
     const result={};
     for(const [id,row] of Object.entries(value)){
       if(!/^[\w:.-]{1,200}$/.test(id)||['__proto__','constructor','prototype'].includes(id)||!row||!allowed.includes(row.status)||!Array.isArray(row.tasks)||row.tasks.length>100||!/^\d{4}-\d{2}-\d{2}$/.test(row.date||''))throw Error('Invalid run in backup');

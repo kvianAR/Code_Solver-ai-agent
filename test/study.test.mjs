@@ -38,3 +38,10 @@ test('interview rubric is bounded and importing active interviews cancels the ti
   assert.throws(()=>parseInterviewFeedback({rubric:{correctness:100,complexity:1,communication:1}}),/Invalid interview rubric/);
   const s=fixture();startInterview(s,{username,problem,minutes:10,hintLimit:1},1000);const restored=portableStudy(s.state.study);assert.equal(restored.interviews[0].status,'cancelled');
 });
+
+test('finishing after an interview deadline keeps the last valid autosaved code, not late replacement code',()=>{
+ const s=fixture(),row=startInterview(s,{username,problem,minutes:10,hintLimit:1},1000);
+ saveInterviewDraft(s,{id:row.id,username,code:'valid saved draft'},2000);
+ const result=finishInterview(s,{id:row.id,username,code:'late replacement'},700000);
+ assert.equal(result.status,'expired');assert.equal(result.code,'valid saved draft');
+});

@@ -59,11 +59,11 @@ test('unavailable Run Code blocks judged submission and records the reason',asyn
   assert.equal(run.tasks[0].problem.selection,'QOTD');
 });
 
-test('Run Code 429 schedules an hourly retry without wasting a judged submission or starting the random question',async()=>{
+test('Run Code 429 schedules a short automatic retry without wasting a judged submission or starting the random question',async()=>{
   const {runner,runs,calls}=fixture({preflight:async()=>{throw Error('LeetCode Run Code unavailable (429)');}});
   runner.start(config,false,2,'Leetcoder071');await runner.done;
   const run=runs[`automatic:${date}:leetcoder071`];
-  assert.equal(run.status,'waiting');
+  assert.equal(run.status,'retrying');
   assert.equal(run.reviewRequired,undefined);
   assert.equal(run.tasks[0].problem.selection,'QOTD');
   assert.equal(run.tasks[1].status,'queued');
@@ -71,12 +71,14 @@ test('Run Code 429 schedules an hourly retry without wasting a judged submission
   assert.equal(automaticRetryDecision(run,config,new Date('2026-09-29T09:00:00Z')).due,true);
 });
 
-test('a repeated unnamed QOTD approach waits without falsely skipping another question',async()=>{
+test('a repeated unnamed QOTD draft is replaced after bounded preparation failures',async()=>{
   const {runner,runs,calls}=fixture({preflight:async()=>({ok:false,feedback:'Wrong Answer'})});
   runner.start(config,false,2,'Leetcoder071');await runner.done;
   const run=runs[`automatic:${date}:leetcoder071`];
-  assert.equal(run.status,'waiting');
-  assert.equal(run.tasks[0].attempts,3);
+  assert.equal(run.status,'failed');
+  assert.equal(run.tasks[0].attempts,4);
+  assert.equal(run.tasks[0].status,'skipped');
+  assert.equal(run.tasks[0].skipReason,'draft-preparation-failed');
   assert.equal(run.tasks[1].status,'queued');
   assert.equal(calls.submitted.length,0);
 });
@@ -301,7 +303,7 @@ test('Stop during discovery prevents generation; a later manual click works',asy
 test('temporary provider failure waits for the next retry instead of burning eight calls',async()=>{
   let attempts=0;const {runner,runs}=fixture({solve:async()=>{attempts++;throw Error('Temporary provider failure');}});
   runner.start(config);await runner.done;
-  assert.equal(attempts,1);assert.equal(runs[date].status,'waiting');
+  assert.equal(attempts,1);assert.equal(runs[date].status,'retrying');
   assert.equal(runs[date].tasks[0].attempts,1);
   assert.equal(runs[date].tasks[0].retryKind,'network');
   assert.equal(runs[date].tasks[1].status,'queued');
@@ -406,7 +408,7 @@ test('identical regenerated code is not submitted twice',async()=>{
   runner.start({...config,dailyQuestionCount:1},false,1,'Leetcoder071');await runner.done;
   assert.equal(calls.submitted.length,1);
   const run=runs[`automatic:${date}:leetcoder071`];
-  assert.equal(run.status,'waiting');assert.equal(run.skipCount,0);
+  assert.equal(run.status,'failed');assert.equal(run.skipCount,1);assert.equal(run.tasks[0].skipReason,'draft-preparation-failed');
   assert.equal(run.tasks[0].submissionAttempts,1);
 });
 

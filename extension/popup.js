@@ -22,9 +22,9 @@ async function refresh(){
   $('#account').textContent=leetcodeSession?.status==='unavailable'?'LeetCode login check unavailable':leetcodeSession?.status==='signed-out'?'LeetCode login needed':account?`Last verified: ${account}`:'LeetCode login not yet checked';
   $('#today-progress').textContent=`${accepted}/${todayTarget}`;
   $('#ring').style.setProperty('--progress',`${Math.min(100,Math.round(accepted/todayTarget*100))}%`);
-  $('#run-status').textContent=live?.activeId?'Solving now':daily?.reviewReason==='daily-skip-limit'?'3 skips · Needs attention':daily?.status?daily.status.charAt(0).toUpperCase()+daily.status.slice(1):config.autoMode?'Scheduled':'Auto Mode paused';
+  $('#run-status').textContent=live?.activeId?'Solving now':daily?.reviewReason==='daily-skip-limit'?'3 skips · Needs attention':['waiting','retrying'].includes(daily?.status)?'Automatic retry':daily?.status?daily.status.charAt(0).toUpperCase()+daily.status.slice(1):config.autoMode?'Scheduled':'Auto Mode paused';
   $('#schedule').textContent=daily?.status==='completed'&&todayTarget!==target?`Tomorrow: ${target} questions at ${config.dailyStartTime} · ${zone}`:config.dailyStartTime?`Daily at ${config.dailyStartTime} · ${zone}`:'Set a daily time in dashboard';
-  $('#diagnosis').textContent=dailyDiagnostic?.message||'Waiting for the next scheduler check.';
+  $('#diagnosis').textContent=daily?.status==='retrying'&&daily.nextRetryAt?'LeetCode retry at '+new Date(daily.nextRetryAt).toLocaleTimeString('en-IN',{timeZone:zone,hour:'2-digit',minute:'2-digit',second:'2-digit'}):dailyDiagnostic?.message||'Waiting for the next scheduler check.';
   let streak=0,day=new Date(`${today}T12:00:00Z`);
   const week=[];
   for(let i=6;i>=0;i--){const d=new Date(day.getTime()-i*86400000),key=localDate(d,zone),run=runs.find(item=>item.mode==='automatic'&&item.date===key),done=countAccepted(run),goal=Number(run?.target)||target;week.push({date:d,done,goal});}

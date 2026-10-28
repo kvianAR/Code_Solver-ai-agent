@@ -1,3 +1,4 @@
+import {retryTime,temporaryFailure} from './retry-policy.js';
 export function unresolvedSubmission(runs,username,titleSlug){
   const rows=Object.values(runs).filter(run=>run.username?.toLowerCase()===username?.toLowerCase()).flatMap(run=>(run.tasks||[]).filter(task=>task.problem?.titleSlug===titleSlug).map(task=>({task,date:run.date})));
   const keys=(record,date)=>[record.submissionId?'id:'+record.submissionId:'',record.fingerprint&&record.at?`${date}:${record.at}:${record.fingerprint}`:''].filter(Boolean);
@@ -9,7 +10,7 @@ export function unresolvedSubmission(runs,username,titleSlug){
   })?.task;
 }
 
-const TERMINAL = new Set(['completed', 'prepared', 'review', 'failed', 'blocked', 'stopped', 'interrupted','waiting']);
+const TERMINAL = new Set(['completed', 'prepared', 'review', 'failed', 'blocked', 'stopped', 'interrupted','waiting','retrying']);
 const ACTIVE = new Set(['discovering', 'running', 'stopping']);
 const DAILY_SUBMISSION_LIMIT = 3;
 const APPROACH_LIMIT = 3;
@@ -21,13 +22,13 @@ const codeFingerprint = code => {
   return `${normalized.length}:${hash>>>0}`;
 };
 export const hasAcceptedQotd = run => (run?.tasks||[]).some(t=>t.problem?.selection==='QOTD'&&t.status==='accepted');
-export const qotdSatisfied=run=>hasAcceptedQotd(run)||['already-accepted','three-approaches-failed'].includes(run?.qotdDisposition);
+export const qotdSatisfied=run=>hasAcceptedQotd(run)||['already-accepted','three-approaches-failed','draft-preparation-failed'].includes(run?.qotdDisposition);
 const failedApproaches=task=>(task.approachHistory||[]).filter(row=>row.approach&&row.approach!=='unlabelled'&&['syntax-failed','test-failed','rejected'].includes(row.status));
 function approachHistory(tasks){
   const records=new Map();for(const task of tasks)for(const row of task.approachHistory||[]){const old=records.get(row.fingerprint);if(!old||row.status!=='prepared')records.set(row.fingerprint,structuredClone(row));}return [...records.values()];
 }
 export function skippedDailyQuestions(runs,date,username){
-  return new Set(Object.values(runs).filter(r=>r.mode==='automatic'&&r.date===date&&r.username?.toLowerCase()===username?.toLowerCase()).flatMap(r=>(r.tasks||[]).filter(t=>t.skipReason==='three-approaches-failed').map(t=>t.problem?.titleSlug)).filter(Boolean));
+  return new Set(Object.values(runs).filter(r=>r.mode==='automatic'&&r.date===date&&r.username?.toLowerCase()===username?.toLowerCase()).flatMap(r=>(r.tasks||[]).filter(t=>['three-approaches-failed','draft-preparation-failed'].includes(t.skipReason)).map(t=>t.problem?.titleSlug)).filter(Boolean));
 }
 export const automaticRunKey = (date, username) => username ? `automatic:${date}:${username.toLowerCase()}` : date;
 export function dailyRunForAccount(runs, date, username) {
@@ -39,7 +40,7 @@ export function latestArchivedAutomaticRun(runs,date,username) {
   if(!username)return null;
   return Object.values(runs).filter(run=>run.mode==='automatic'&&run.date===date&&
     run.username?.toLowerCase()===username.toLowerCase()&&run.id?.startsWith('automatic-history:')&&
-    ['failed','blocked','waiting','interrupted','review','prepared','completed'].includes(run.status))
+    ['failed','blocked','waiting','retrying','interrupted','review','prepared','completed'].includes(run.status))
     .sort((a,b)=>(b.finishedAt||b.startedAt||'').localeCompare(a.finishedAt||a.startedAt||''))[0]||null;
 }
 
@@ -74,7 +75,7 @@ export function automaticRetryDecision(run, config, now = new Date()) {
   if (['review','prepared','completed'].includes(run.status)) return {due:true,reason:'The full daily allotment still needs accepted results; resuming remaining questions.'};
   if (ACTIVE.has(run.status)) return {due:false, reason:'Daily run is in progress'};
   if (run.status === 'stopped') return {due:false, reason:'Stopped manually; use Retry today to resume'};
-  if (!['failed','blocked','waiting','interrupted'].includes(run.status)) return {due:false, reason:'Daily run is already scheduled'};
+  if (!['failed','blocked','waiting','retrying','interrupted'].includes(run.status)) return {due:false, reason:'Daily run is already scheduled'};
   if (run.status === 'interrupted') return {due:true, reason:'Interrupted run found; resuming after browser restart'};
   const nextAt=run.nextRetryAt || (run.finishedAt?new Date(new Date(run.finishedAt).getTime()+(config.automaticRetryMinutes||60)*60000).toISOString():'');
   return !nextAt || now >= new Date(nextAt)
@@ -127,13 +128,14 @@ export class LeetCodeRunner {
     const runs = await this.io.load();
     for (const run of Object.values(runs)) {
       if(username&&run.username?.toLowerCase()!==username.toLowerCase())continue;
-      if (!ACTIVE.has(run.status)&&!(retryResults&&(run.tasks||[]).some(t=>['blocked','stopped','waiting'].includes(t.status)&&t.submissionId&&t.submissionHistory?.at(-1)?.status==='unknown'))) continue;
+      if (!ACTIVE.has(run.status)&&!(retryResults&&(run.tasks||[]).some(t=>['blocked','stopped','waiting','retrying'].includes(t.status)&&t.submissionId&&t.submissionHistory?.at(-1)?.status==='unknown'))) continue;
       const wasStopped=run.status==='stopped';
       run.status = wasStopped?'stopped':'interrupted';
       const uncertain=run.reviewReason==='uncertain-submission'||(run.tasks||[]).some(t=>t.submissionId&&t.submissionHistory?.at(-1)?.status==='unknown');
       run.feedback = 'Browser restarted during this session. Automatic work will resume after the next poll.';
       for (const task of run.tasks || []) {
-        if((task.status==='submitting'||retryResults&&['blocked','stopped','waiting'].includes(task.status)&&task.submissionId)&&this.io.result){
+        let recoveryRetryAt='';
+        if((task.status==='submitting'||retryResults&&['blocked','stopped','waiting','retrying'].includes(task.status)&&task.submissionId)&&this.io.result){
           if(task.submissionId){
             try{
               const judged=await this.io.result(task.submissionId,run.username);
@@ -143,13 +145,13 @@ export class LeetCodeRunner {
               if(record){record.status=judged.accepted?'accepted':'rejected';record.submissionId=task.submissionId;}
               const attempt=task.approachHistory?.find(a=>a.fingerprint===record?.fingerprint);if(attempt)attempt.status=judged.accepted?'accepted':'rejected';
               continue;
-            }catch(error){task.feedback='Result recovery needs attention: '+error.message;}
+            }catch(error){task.feedback='Result recovery needs attention: '+error.message;recoveryRetryAt=temporaryFailure(error)?retryTime(error,this.io.now().getTime()):'';}
           }else task.feedback='Submission may have been sent before restart. Check LeetCode submission history before retrying.';
-          task.status=wasStopped?'stopped':'blocked';run.status=wasStopped?'stopped':'blocked';run.reviewRequired=true;run.nextResultCheckAt=new Date(this.io.now().getTime()+5*60000).toISOString();continue;
+          task.status=wasStopped?'stopped':'blocked';run.status=wasStopped?'stopped':'blocked';run.reviewRequired=true;run.nextResultCheckAt=recoveryRetryAt||new Date(this.io.now().getTime()+5*60000).toISOString();continue;
         }
         if (['solving', 'drafting', 'checking', 'testing', 'submitting'].includes(task.status)) task.status = 'interrupted';
       }
-      if(uncertain&&!run.tasks.some(t=>t.status==='blocked')){delete run.reviewRequired;delete run.reviewReason;delete run.nextResultCheckAt;}
+      if(uncertain&&!run.tasks.some(t=>t.submissionHistory?.at(-1)?.status==='unknown'||t.status==='blocked')){delete run.reviewRequired;delete run.reviewReason;delete run.nextResultCheckAt;}
       if(run.target&&run.tasks.filter(t=>t.status==='accepted').length===run.target&&(run.mode==='manual'||qotdSatisfied(run))){run.status='completed';delete run.reviewRequired;run.finishedAt=this.io.now().toISOString();run.feedback='Recovered LeetCode results after browser restart';}
       await this.io.save(run);
     }
@@ -210,10 +212,10 @@ export class LeetCodeRunner {
       const resumeLimit=config.dailyQuestionCount;
       run = {id: active.id, date: clock.date, mode: manual ? 'manual' : 'automatic',
         target: requestedSlug ? 1 : manual ? manualTarget : config.dailyQuestionCount, status: 'discovering',
-        startedAt: this.io.now().toISOString(), username:accountUsername, retryNumber,
+        startedAt: this.io.now().toISOString(), username:accountUsername, retryNumber, timezone:config.timezone,
         tasks: manual ? [] : acceptedResume.slice(0,resumeLimit)};
       const previousDaily=accountUsername?Object.values(runs).filter(r=>r.mode==='automatic'&&r.date===clock.date&&r.username?.toLowerCase()===accountUsername.toLowerCase()):[];
-      run.qotdDisposition=previousDaily.find(r=>['already-accepted','three-approaches-failed'].includes(r.qotdDisposition))?.qotdDisposition||'';
+      run.qotdDisposition=previousDaily.find(r=>['already-accepted','three-approaches-failed','draft-preparation-failed'].includes(r.qotdDisposition))?.qotdDisposition||'';
       const skipped=skippedDailyQuestions(runs,clock.date,accountUsername);run.skipCount=skipped.size;
       this.currentRun=run;
       await this.io.save(run);
@@ -255,8 +257,8 @@ export class LeetCodeRunner {
           excludeSlugs.add(problem.titleSlug);
           const prior=problem.selection==='QOTD'&&problem.alreadyAcceptedToday?accountRuns.flatMap(r=>r.date===clock.date?r.tasks||[]:[]).find(t=>t.status==='accepted'&&t.problem?.titleSlug===problem.titleSlug):null;
           const previousTasks=priorTasksFor(problem.titleSlug),previous=previousTasks.at(-1);
-          const cached=previous?.solution&&previous.verification?.ok&&!previous.submissionAttempts&&!previous.submissionHistory?.length&&(previous.status==='review'||/Pre-submit check unavailable|network|429|timed out/i.test(previous.feedback||''));
-          run.tasks.push(prior?{...structuredClone(prior),problem,status:'accepted'}:{problem,status:'pending',attempts:0,approachHistory:approachHistory(previousTasks),feedback:previous?.feedback?`Previous attempt: ${previous.feedback}${previous.solution?.code?'\nPrevious draft:\n'+previous.solution.code.slice(0,3000):''}`:'',previousProvider:previous?.provider,cachedDraft:cached?{...previous.solution,provider:previous.provider}:null});
+          const cached=previous?.solution&&previous.verification?.ok&&!previousTasks.some(t=>(t.submittedCodeFingerprints||[]).includes(codeFingerprint(previous.solution.code)))&&['review','retrying','waiting','blocked','interrupted','stopped'].includes(previous.status);
+          run.tasks.push(prior?{...structuredClone(prior),problem,status:'accepted'}:{problem,status:'pending',attempts:0,approachHistory:approachHistory(previousTasks),preparationFailures:Math.max(0,...previousTasks.map(t=>t.preparationFailures||0)),preflightCheckpoint:cached?previous.preflightCheckpoint:null,feedback:previous?.feedback?`Previous attempt: ${previous.feedback}${previous.solution?.code?'\nPrevious draft:\n'+previous.solution.code.slice(0,3000):''}`:'',previousProvider:previous?.provider,cachedDraft:cached?{...previous.solution,provider:previous.provider}:null});
         }
         if (!fresh.length) return false;
         await this.io.save(run);
@@ -293,14 +295,14 @@ export class LeetCodeRunner {
         task.submittedCodeFingerprints ||= [];
         while (task.status !== 'accepted' && task.attempts < (manual?config.maxAttempts:Math.max(3,config.maxAttempts))) {
           if (active.stop) return await this.finishStopped(run);
-          if(!manual&&failedApproaches(task).length>=APPROACH_LIMIT)break;
+          if(!manual&&(failedApproaches(task).length>=APPROACH_LIMIT||(task.preparationFailures||0)>=APPROACH_LIMIT))break;
           if(!reviewTask&&priorSubmissions+task.submissionAttempts>=DAILY_SUBMISSION_LIMIT){
             task.status='failed';task.feedback=`Submission safety limit (${DAILY_SUBMISSION_LIMIT} per question per day) reached. Review the solution before another submission.`;
             run.reviewRequired=true;break;
           }
           if (accountUsername && this.io.session && (await this.io.session()).toLowerCase() !== accountUsername.toLowerCase()) throw Error('LeetCode account changed during this run. Retry with the account currently signed in.');
           const cachedDraft=task.cachedDraft;delete task.cachedDraft;
-          if(!cachedDraft)task.attempts++;
+          if(!cachedDraft)task.attempts++;else task.reusedDrafts=(task.reusedDrafts||0)+1;
           task.status = 'drafting';
           await this.io.save(run);
           if (active.stop) return await this.finishStopped(run);
@@ -319,9 +321,11 @@ export class LeetCodeRunner {
             task.status = 'pending';
             task.retryKind=/key|quota|budget/.test(error.message)?'provider':/login|session|csrf|account/i.test(error.message)?'login':/rate|429|temporary|unavailable|network|timed out|timeout|connection/i.test(error.message)?'network':'solution';
             if (task.retryKind!=='solution'||/contest.*is live/i.test(error.message)) {
-              task.status = task.retryKind==='network'?'waiting':'blocked';
+              task.status = task.retryKind==='network'?'retrying':'blocked';
+              if(task.status==='retrying')run.nextRetryAt=retryTime(error,this.io.now().getTime());
               break;
             }
+            task.preparationFailures=(task.preparationFailures||0)+1;
             await this.io.save(run);
             continue;
           }
@@ -330,7 +334,8 @@ export class LeetCodeRunner {
           if(!manual&&task.approachHistory.filter(row=>['syntax-failed','test-failed','rejected'].includes(row.status)).some(row=>row.fingerprint===draftFingerprint||row.approach===approach||approach==='unlabelled')){
             task.feedback='Choose a genuinely different algorithm, name it in approach, and change the code. Previously failed approaches: '+failedApproaches(task).map(r=>r.approach).join(', ');
             task.repeatedApproaches=(task.repeatedApproaches||0)+1;task.status='pending';await this.io.save(run);
-            if(task.repeatedApproaches>=2){task.status='waiting';task.feedback='The AI repeated an approach or did not name a different one. Waiting for a different draft; this is not a skip.';break;}continue;
+            task.preparationFailures=(task.preparationFailures||0)+1;await this.io.save(run);
+            if(task.preparationFailures>=3){task.feedback='Three draft preparation attempts could not produce a distinct usable approach. Selecting an Easy replacement.';break;}continue;
           }
           let attempt=task.approachHistory.find(row=>row.fingerprint===draftFingerprint);
           if(!attempt){attempt={approach,fingerprint:draftFingerprint,status:'prepared',at:this.io.now().toISOString()};task.approachHistory.push(attempt);}
@@ -348,8 +353,9 @@ export class LeetCodeRunner {
           task.status='testing';await this.io.save(run);
           try{
             task.preflightRuns=(task.preflightRuns||0)+1;
-            const checked=await this.io.preflight({...task.problem,additionalTestcases:config.additionalChecks?solution.testCases||[]:[]},solution.code,run.username,active.controller.signal);
+            const checked=await this.io.preflight({...task.problem,additionalTestcases:config.additionalChecks?solution.testCases||[]:[],preflightCheckpoint:task.preflightCheckpoint||null},solution.code,run.username,active.controller.signal);
             if(active.stop)return await this.finishStopped(run);
+            delete task.preflightCheckpoint;
             task.preflight={ok:!!checked?.ok,extraCases:checked?.extraCases||0,extraStatus:checked?.extraStatus||'',feedback:checked?.feedback||''};
             if(!checked?.ok){
               task.preflightFailures=(task.preflightFailures||0)+1;
@@ -361,8 +367,9 @@ export class LeetCodeRunner {
             if(active.stop)return await this.finishStopped(run);
             task.feedback=`Pre-submit check unavailable: ${error.message}`;task.status='blocked';
             // Rate limits and temporary network failures did not send a judged
-            // submission. Let the hourly scheduler try again after recovery.
-            if(/\b429\b|\b5\d\d\b|timed out|timeout|network|fetch failed|connection failed/i.test(error.message))task.status='waiting';else run.reviewRequired=true;
+            // submission. Use the server cooldown and a precise retry alarm after
+            // recovery; do not postpone this draft to the unrelated hourly slot.
+            if(temporaryFailure(error)){task.status='retrying';run.nextRetryAt=retryTime(error,this.io.now().getTime());if(error.checkpoint)task.preflightCheckpoint=error.checkpoint;}else run.reviewRequired=true;
             await this.io.save(run);break;
           }
           const fingerprint=codeFingerprint(solution.code);
@@ -394,15 +401,20 @@ export class LeetCodeRunner {
             task.status='pending';await this.io.save(run);
           }catch(error){
             if(active.stop)return await this.finishStopped(run);
+            if(error.submissionSent===false){
+              task.submissionHistory.pop();task.submissionAttempts--;task.submittedCodeFingerprints.pop();submittedCodes.delete(fingerprint);
+              task.submissionTransportFailures=(task.submissionTransportFailures||0)+1;task.status='retrying';task.feedback='LeetCode did not accept the submission request. Automatic retry after the server cooldown.';
+              run.nextRetryAt=retryTime(error,this.io.now().getTime());await this.io.save(run);break;
+            }
             task.feedback=`Submission result uncertain: ${error.message}`;task.status='blocked';run.reviewRequired=true;run.reviewReason='uncertain-submission';run.nextResultCheckAt=new Date(this.io.now().getTime()+5*60000).toISOString();
             await this.io.save(run);
             break;
           }
         }
-        if(!manual&&task.status!=='accepted'&&failedApproaches(task).length>=APPROACH_LIMIT){
-          task.status='skipped';task.skipReason='three-approaches-failed';task.feedback='Three different approaches failed syntax, examples or judging. This question was skipped; an untouched Easy question will replace it.';
+        if(!manual&&task.status!=='accepted'&&(failedApproaches(task).length>=APPROACH_LIMIT||(task.preparationFailures||0)>=APPROACH_LIMIT)){
+          task.status='skipped';task.skipReason=failedApproaches(task).length>=3?'three-approaches-failed':'draft-preparation-failed';task.feedback=task.skipReason==='three-approaches-failed'?'Three different approaches failed syntax, examples or judging. Replacing with an untouched Easy question.':'Three preparation attempts could not produce a usable distinct draft. Replacing with an untouched Easy question; this is not three different failed algorithms.';
           skipped.add(task.problem.titleSlug);run.skipCount=skipped.size;
-          if(task.problem.selection==='QOTD')run.qotdDisposition='three-approaches-failed';
+          if(task.problem.selection==='QOTD')run.qotdDisposition=task.skipReason;
           await this.io.save(run);
           if(skipped.size>=DAILY_SKIP_LIMIT){run.reviewRequired=true;run.reviewReason='daily-skip-limit';run.feedback='Three questions were skipped today. Automatic work has stopped; review is needed.';break;}
           const before=run.tasks.length;
@@ -411,27 +423,28 @@ export class LeetCodeRunner {
           }else {run.feedback='No untouched Easy replacement was available. The remaining allotment is still pending.';if(run.tasks.length===before)break;}
           continue;
         }
-        if (!['accepted','blocked','waiting','review'].includes(task.status)) task.status = manual?'failed':'waiting';
+        if (!['accepted','blocked','retrying','review'].includes(task.status)) task.status = manual?'failed':'retrying';
         await this.io.save(run);
-        if (['blocked','waiting'].includes(task.status)) break;
+        if (['blocked','retrying'].includes(task.status)) break;
         if(!manual&&task.problem?.selection==='QOTD'&&task.status!=='accepted')break;
       }
       const readyCount=run.tasks.filter(t=>t.status==='accepted').length;
-      run.status=readyCount>=run.target&&(manual||qotdSatisfied(run))?'completed':run.reviewRequired||run.tasks.some(t=>t.status==='blocked')?'blocked':run.tasks.some(t=>t.status==='waiting')?'waiting':'failed';
+      run.status=readyCount>=run.target&&(manual||qotdSatisfied(run))?'completed':run.reviewRequired||run.tasks.some(t=>t.status==='blocked')?'blocked':run.tasks.some(t=>t.status==='retrying')?'retrying':'failed';
       if(config.reviewBeforeSubmit&&manual&&run.tasks.length===run.target&&run.tasks.some(t=>t.status==='review')&&run.tasks.every(t=>['review','accepted'].includes(t.status)))run.status='review';
       if(run.status!=='completed')for(const task of run.tasks)if(task.status==='pending'){task.status='queued';task.feedback='Waiting for the current question or service to recover. This question has not been tried or skipped.';}
       run.finishedAt = this.io.now().toISOString();
-      if (!manual && !['completed','review'].includes(run.status)&&!run.reviewRequired) run.nextRetryAt = nextHourlyRetryAt(config,this.io.now());
+      if (!manual && !['completed','review'].includes(run.status)&&!run.reviewRequired) run.nextRetryAt ||= run.status==='retrying'?retryTime({},this.io.now().getTime()):nextHourlyRetryAt(config,this.io.now());
       await this.io.save(run);
       await this.notifySummary(run);
       return run;
     } catch (error) {
       if (active.stop && run) return await this.finishStopped(run);
       if (run) {
-        run.status = 'blocked'; run.feedback = error.message;
-        for (const task of run.tasks) if (['pending','drafting'].includes(task.status)) {task.status=task.problem?.titleSlug===run.currentQuestion?'blocked':'queued';task.feedback=task.status==='blocked'?error.message:'Not attempted; waiting for the active question or session to recover.';}
+        run.status = temporaryFailure(error)?'retrying':'blocked'; run.feedback = error.message;
+        if(run.status==='retrying')run.nextRetryAt=retryTime(error,this.io.now().getTime());
+        for (const task of run.tasks) if (['pending','drafting'].includes(task.status)) {task.status=task.problem?.titleSlug===run.currentQuestion?run.status:'queued';task.feedback=task.status==='blocked'?error.message:'Not attempted; waiting for the active question or session to recover.';}
         run.finishedAt = this.io.now().toISOString();
-        if (!manual) run.nextRetryAt = nextHourlyRetryAt(config,this.io.now());
+        if (!manual) run.nextRetryAt ||= run.status==='retrying'?retryTime({},this.io.now().getTime()):nextHourlyRetryAt(config,this.io.now());
         await this.io.save(run);
       }
       if (run) await this.notifySummary(run);
@@ -442,10 +455,10 @@ export class LeetCodeRunner {
 
   async notifySummary(run) {
     const accepted=run.tasks.filter(t=>t.status==='accepted').length;
-    const failed=run.tasks.find(t=>['blocked','waiting','failed','skipped'].includes(t.status));
+    const failed=run.tasks.find(t=>['blocked','retrying','failed','skipped'].includes(t.status));
     const reason=failed?.feedback||run.feedback||'';
     const detail=failed?.problem?.title ? `${failed.problem.title}: ${reason}` : reason;
-    const retry=run.reviewReason==='daily-skip-limit'?' Three daily skips reached. Automatic work is paused; check this run.':run.status==='review'?' Drafts are ready for your review; submit them yourself on LeetCode.':run.reviewRequired?' Automatic retries are paused pending review.':run.mode==='automatic'&&run.status!=='completed'?' A retry is scheduled.':'';
+    const retry=run.status==='retrying'?` Automatic retry at ${new Intl.DateTimeFormat('en-IN',{timeZone:run.timezone||'Asia/Kolkata',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(run.nextRetryAt||this.io.now()))}.`:run.reviewReason==='daily-skip-limit'?' Three daily skips reached. Automatic work is paused; check this run.':run.status==='review'?' Drafts are ready for your review; submit them yourself on LeetCode.':run.reviewRequired?' Automatic retries are paused pending review.':run.mode==='automatic'&&run.status!=='completed'?' A retry is scheduled.':'';
     await this.io.notify(`leetcode-run:${run.id}`,`${accepted}/${run.target} accepted · ${run.mode==='manual'?'Manual':'Daily'}`,
       `${run.username||'LeetCode'} · ${run.status}.${detail?' '+detail.slice(0,220):''}${retry}`);
   }

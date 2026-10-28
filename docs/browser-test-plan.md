@@ -41,3 +41,13 @@ The automation available in this chat cannot open `chrome-extension://` pages. R
 - With fewer than three failed approaches and a service interruption, confirm the unfinished question is rediscovered before unrelated random work.
 - Repeat an algorithm label or identical code. Confirm it is not counted as a new failed approach and never duplicates an earlier submission.
 - Stop while a saved submission ID is pending. Confirm judge-result recovery updates history while Stop still prevents new generation/submission.
+
+## 3.3.1 transport recovery
+
+- With a mocked 429 and Retry-After, confirm a persisted browser-wide cooldown, the exact retry alarm, no requests from other tabs before expiry, and fresh login verification when the retry becomes due.
+- Pause a Run Code result response with 429. Restart the worker/tab, then recover the same test run ID without repeating the interpret POST. Repeat during optional boundary checks; official examples must not be rerun.
+- Change account/code/problem/inputs or expire the checkpoint. Confirm it is rejected and fresh checks run.
+- Verify explicit submit HTTP 429 does not create an unknown judged result or consume a judged slot. A dropped response after a POST remains unknown and must never replay automatically.
+- Close a message port mid-submission. Confirm only one send; a genuinely missing receiving bridge may be injected before a fresh operation.
+- Repeatedly return the same AI algorithm. Confirm three preparation failures permit Easy replacement, record the actual reason, and do not reset the daily three-skip limit.
+- Confirm the QOTD selection note spans the task grid, cached-draft reuse is labelled, and the popup gives the retry time.
