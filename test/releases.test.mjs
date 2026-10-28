@@ -11,12 +11,12 @@ function tree(root,version){
 }
 function fixture(t){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'practice-release-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const root=path.join(dir,'installed'),source=path.join(dir,'release'),archive=path.join(dir,'release.zip');tree(root,'2.9.0');tree(source,'3.0.0');execFileSync('zip',['-qr',archive,'package.json','config.json','extension','server','scripts'],{cwd:source});return {dir,root,source,archive};}
 test('checked update and code rollback preserve runtime history and credentials',t=>{
-  const {root,archive}=fixture(t),state=path.join(root,'data','state.json');fs.writeFileSync(state,'private-current-history');
+  const {root,archive}=fixture(t),state=path.join(root,'data','state.json');fs.writeFileSync(state,'private-current-history');fs.writeFileSync(path.join(root,'AGENTS.md'),'Keep the complete daily allotment mandatory.');
   const installed=applyArchive(root,archive,{manageService:false});
   assert.equal(JSON.parse(fs.readFileSync(path.join(root,'package.json'))).version,'3.0.0');assert.equal(fs.readFileSync(state,'utf8'),'private-current-history');
   fs.writeFileSync(state,'history-recorded-after-update');
   const restored=applyRollback(root,installed.rollbackId,{manageService:false});
-  assert.equal(restored.version,'2.9.0');assert.equal(fs.readFileSync(state,'utf8'),'history-recorded-after-update');assert.equal(listSnapshots(path.join(root,'data')).length,2);
+  assert.equal(restored.version,'2.9.0');assert.equal(fs.readFileSync(path.join(root,'AGENTS.md'),'utf8'),'Keep the complete daily allotment mandatory.');assert.equal(fs.readFileSync(state,'utf8'),'history-recorded-after-update');assert.equal(listSnapshots(path.join(root,'data')).length,2);
 });
 test('an install copy failure restores the previous code automatically',t=>{
   const {root,archive}=fixture(t),original=fs.cpSync;let failed=false;

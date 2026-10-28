@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 
 const roots=['extension','server','scripts','test','docs'];
 const files=['Start Practice Ex.command','package.json','config.json','compatibility.json','README.md','CHANGELOG.md','LICENSE','CONTRIBUTING.md','Dockerfile','compose.yaml','.gitignore','.dockerignore'];
-const allowed=name=>roots.some(root=>name===root+'/'||name.startsWith(root+'/'))||files.includes(name);
+const allowed=name=>name==='AGENTS.md'||roots.some(root=>name===root+'/'||name.startsWith(root+'/'))||files.includes(name);
 export function inspectZip(buffer){
   if(buffer.length>50e6)throw Error('Release exceeds 50 MB');
   let end=-1;
@@ -58,6 +58,7 @@ function copyCode(from,to){
     const source=path.join(from,name);if(!fs.existsSync(source))continue;
     fs.cpSync(source,path.join(to,name),{recursive:true,filter:file=>!path.basename(file).startsWith('local-connection.json')});
   }
+  if(fs.existsSync(path.join(from,'AGENTS.md'))&&!fs.existsSync(path.join(to,'AGENTS.md')))fs.copyFileSync(path.join(from,'AGENTS.md'),path.join(to,'AGENTS.md'));
 }
 function replaceCode(from,to){
   for(const name of [...roots,...files])fs.rmSync(path.join(to,name),{recursive:true,force:true});

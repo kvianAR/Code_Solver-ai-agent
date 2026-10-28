@@ -217,7 +217,7 @@ A same-day stopped/failed automatic run can be archived and retried when moved t
 | Language | Python or JavaScript |
 | Account lock | Off by default; enable only if you want the configured username |
 
-**Review mode:** enable “Prepare drafts for review” in Settings to generate syntax-checked, example-tested drafts without sending judged submissions. Copy the code and submit it yourself on LeetCode. These sessions show **review**, not **accepted**, and do not retry automatically while awaiting review.
+**Review mode:** only manual work can be held for review. Every automatic daily allotted question goes through checks and judged submission; QOTD is mandatory and first. Copy the code and submit it yourself on LeetCode. Unsubmitted drafts show **review**, never **accepted**. Automatic daily work is not complete until the full configured count and QOTD have accepted results. Increasing the allotment resumes the additional questions today while retaining accepted progress.
 
 **Retries:** select a 15–240 minute interval. Temporary provider/network errors pause generation until the next scheduled retry instead of immediately spending all draft attempts. Wrong solutions can still regenerate within the configured attempt and submission limits. The optional wake helper uses the selected interval after its next refresh; reinstall it after updating its code.
 

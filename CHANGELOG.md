@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.1
+
+- Preserve the standing daily allotment requirement: the full configured count, currently two, must have accepted results, including QOTD first.
+- Limit draft-only review to manual work so it cannot stop automatic daily completion.
+- Resume unfinished automatic review drafts and same-day increases in allotment while carrying accepted progress forward.
+- Keep project requirements through code updates and rollback.
+
 ## 3.0.0
 
 - Browser self-check with real read-only permission, pairing, version and login probes; manual restart/offline/account-switch checks remain visibly separate.

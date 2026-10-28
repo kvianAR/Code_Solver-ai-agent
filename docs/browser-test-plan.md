@@ -13,7 +13,7 @@ After loading or reloading `extension/` from this checkout, use **Check this bro
 | Offline recovery | While idle, briefly disconnect the network and reconnect | A network failure is not presented as a logout; practice waits for verified login |
 | Interrupted submission | In an owned test environment, restart the worker after a submission ID is saved | The saved result is polled; generation and submission are not duplicated |
 | Learning | Open a question and use Learn with hints in the popup | Hint, approach, code review and solution are separate explicit provider requests; none submits code |
-| Review mode | Enable draft review and run one practice question | Examples and supplied boundary inputs are checked; no judged submission is sent |
+| Review mode | Enable draft review and run one manual practice question | Examples and supplied boundary inputs are checked; no judged submission is sent |
 | Backup | Export then inspect a backup | No provider keys, connection token, pairing key or cookies are present |
 | Update | Check a trusted local release ZIP before installing | Invalid or incompatible archives are rejected; a restore point exists before replacement |
 

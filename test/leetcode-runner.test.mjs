@@ -239,7 +239,7 @@ test('hourly retry waits after failure, wakes immediately for missed first run, 
   const failed={status:'failed',target:2,finishedAt:'2026-09-29T05:05:00Z',nextRetryAt:'2026-09-29T06:05:00Z',tasks:[{status:'accepted'}]};
   assert.equal(automaticRetryDecision(failed,config,new Date('2026-09-29T05:59:00Z')).due,false);
   assert.equal(automaticRetryDecision(failed,config,new Date('2026-09-29T06:06:00Z')).due,true);
-  assert.equal(automaticRetryDecision({...failed,status:'completed',tasks:[{status:'accepted'},{status:'accepted'}]},config,new Date('2026-09-29T06:06:00Z')).due,false);
+  assert.equal(automaticRetryDecision({...failed,status:'completed',tasks:[{status:'accepted',problem:{selection:'QOTD'}},{status:'accepted'}]},config,new Date('2026-09-29T06:06:00Z')).due,false);
   assert.equal(automaticRetryDecision({...failed,status:'interrupted'},config,new Date('2026-09-29T05:20:00Z')).due,true);
   assert.equal(automaticRetryDecision({...failed,status:'stopped'},config,new Date('2026-09-29T06:20:00Z')).due,false);
 });
@@ -436,13 +436,13 @@ test('session failure blocks submission and skips remaining questions',async()=>
   assert.deepEqual(runs[date].tasks.map(task=>task.status),['blocked','skipped']);
 });
 
-test('review mode prepares QOTD and the next draft without judged submissions or retry wakes',async()=>{
+test('manual review mode cannot downgrade any automatic allotted question to a draft',async()=>{
   const {runner,runs,calls}=fixture();
   runner.start({...config,reviewBeforeSubmit:true},false,2,'Leetcoder071');await runner.done;
   const run=Object.values(runs)[0];
-  assert.equal(run.status,'review');assert.equal(run.tasks.length,2);
-  assert.ok(run.tasks.every(t=>t.status==='review'));
-  assert.equal(calls.submitted.length,0);assert.equal(run.nextRetryAt,undefined);
+  assert.equal(run.status,'completed');assert.equal(run.tasks.length,2);
+  assert.equal(run.tasks[0].status,'accepted');assert.equal(run.tasks[0].problem.selection,'QOTD');assert.equal(run.tasks[1].status,'accepted');
+  assert.equal(calls.submitted.length,2);assert.equal(run.nextRetryAt,undefined);
   assert.equal(automaticRetryDecision(run,config).due,false);
 });
 
@@ -476,10 +476,10 @@ test('submission id is persisted before the result polling finishes',async()=>{
   finish.resolve();await runner.done;
 });
 
-test('changing the schedule does not silently replace drafts awaiting review',()=>{
-  const run={id:date,mode:'automatic',date,status:'review',startedAt:'2026-09-29T04:30:00Z',tasks:[]};
+test('automatic review drafts cannot block the full daily allotment',()=>{
+  const run={id:date,mode:'automatic',date,status:'review',startedAt:'2026-09-29T04:30:00Z',tasks:[{status:'accepted',problem:{selection:'QOTD'}}]};
   const runs={[date]:run};
-  assert.equal(archiveRetryableAutomaticRun(runs,date,'archive'),false);
+  assert.equal(archiveRetryableAutomaticRun(runs,date,'archive'),true);
   assert.equal(shouldRetryForLaterSchedule(run,config,new Date('2026-09-29T06:00:00Z')),false);
 });
 
@@ -492,4 +492,36 @@ test('additional generated cases go to the official preflight before any judged 
   const {runner,calls}=fixture({solve:async()=>({code:'class Solution: pass',provider:'groq',testCases:[{input:'[1]\n2',reason:'boundary'}]}),preflight:async(problem)=>{extra=problem.additionalTestcases;return {ok:true};}});
   runner.start({...config,additionalChecks:true},true,1,'Leetcoder071');await runner.done;
   assert.equal(extra[0].input,'[1]\n2');assert.equal(calls.submitted.length,1);
+});
+
+test('a QOTD-only automatic target completes even when draft review is enabled',async()=>{
+  const {runner,runs,calls}=fixture();
+  runner.start({...config,dailyQuestionCount:1,reviewBeforeSubmit:true},false,1,'Leetcoder071');await runner.done;
+  const run=Object.values(runs)[0];assert.equal(run.status,'completed');assert.equal(run.tasks[0].status,'accepted');assert.equal(calls.submitted.length,1);
+});
+
+test('an old automatic QOTD review draft is resumable rather than treated as finished',()=>{
+  const run={id:date,mode:'automatic',date,status:'review',tasks:[{status:'review',problem:{selection:'QOTD'}}]};
+  assert.equal(automaticRetryDecision(run,config,new Date('2026-09-29T06:00:00Z')).due,true);
+  assert.equal(archiveRetryableAutomaticRun({[date]:run},date,'archive'),true);
+});
+
+test('automatic QOTD still respects judged limits when review is enabled',async()=>{
+  let draft=0;const {runner,runs,calls}=fixture({solve:async()=>({code:'draft '+(++draft),provider:'groq'}),submit:async problem=>{calls.submitted.push(problem.titleSlug);return {accepted:false,submissionId:String(draft),feedback:'Wrong Answer'};}});
+  runner.start({...config,reviewBeforeSubmit:true},false,2,'Leetcoder071');await runner.done;
+  const run=Object.values(runs)[0];assert.equal(calls.submitted.length,2);assert.equal(run.reviewRequired,true);assert.notEqual(run.status,'completed');
+});
+
+test('raising a completed daily allotment resumes only the additional question today',async()=>{
+  const first=fixture();first.runner.start(config,false,2,'Leetcoder071');await first.runner.done;
+  const run=Object.values(first.runs)[0],larger={...config,dailyQuestionCount:3};
+  assert.equal(automaticRetryDecision(run,larger,new Date('2026-09-29T06:00:00Z')).due,true);
+  assert.equal(archiveRetryableAutomaticRun(first.runs,run.id,'automatic-history:allotment',3),true);
+  const next=fixture({discover:async options=>{assert.equal(options.requireQotd,false);return {username:'Leetcoder071',questions:[{titleSlug:'additional-question',title:'Additional question',selection:'RANDOM'}]};}},first.runs);next.runner.start(larger,false,3,'Leetcoder071','',run.tasks,2);await next.runner.done;
+  const result=Object.values(next.runs).find(r=>r.id===run.id);assert.equal(result.status,'completed');assert.equal(result.tasks.filter(t=>t.status==='accepted').length,3);assert.equal(next.calls.submitted.length,1);
+});
+
+test('manual review still produces a draft without a judged submission',async()=>{
+  const {runner,runs,calls}=fixture();runner.start({...config,reviewBeforeSubmit:true},true,1,'Leetcoder071');await runner.done;
+  assert.equal(Object.values(runs)[0].status,'review');assert.equal(calls.submitted.length,0);
 });

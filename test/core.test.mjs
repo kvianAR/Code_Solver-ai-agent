@@ -237,7 +237,7 @@ test('setup diagnostics stay authenticated and do not make provider calls',async
   assert.equal((await fetch(url+'/api/diagnostics')).status,401);
   const response=await fetch(url+'/api/diagnostics',{headers:{Authorization:'Bearer '+store.state.adminToken}});
   assert.equal(response.status,200);const result=await response.json();
-  assert.equal(result.version,'3.0.0');assert.ok(result.checks.some(c=>c.id==='syntax'&&c.ok));
+  assert.equal(result.version,'3.0.1');assert.ok(result.checks.some(c=>c.id==='syntax'&&c.ok));
   assert.ok(!JSON.stringify(result).includes(store.state.adminToken));assert.deepEqual(store.state.usage,{});
 });
 

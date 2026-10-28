@@ -18,15 +18,19 @@ export function latestArchivedAutomaticRun(runs,date,username) {
   if(!username)return null;
   return Object.values(runs).filter(run=>run.mode==='automatic'&&run.date===date&&
     run.username?.toLowerCase()===username.toLowerCase()&&run.id?.startsWith('automatic-history:')&&
-    ['failed','blocked','interrupted'].includes(run.status))
+    ['failed','blocked','interrupted','review','prepared','completed'].includes(run.status))
     .sort((a,b)=>(b.finishedAt||b.startedAt||'').localeCompare(a.finishedAt||a.startedAt||''))[0]||null;
 }
 
 // Keep the old attempt in history, but free today's date key when the user
 // deliberately moves the schedule after a stopped/failed automatic test.
-export function archiveRetryableAutomaticRun(runs, date, archiveId) {
+export function archiveRetryableAutomaticRun(runs, date, archiveId, allottedCount=null) {
   const run = runs[date];
-  if (!run || run.mode !== 'automatic' || ['completed','prepared','review'].includes(run.status) || ACTIVE.has(run.status)) return false;
+  if (!run || run.mode !== 'automatic' || ACTIVE.has(run.status)) return false;
+  const accepted=(run.tasks||[]).filter(t=>t.status==='accepted').length;
+  const target=allottedCount??run.target;
+  if(run.status==='review'&&Number.isInteger(target)&&accepted>=target&&hasAcceptedQotd(run))return false;
+  if(['completed','prepared'].includes(run.status)&&!(Number.isInteger(allottedCount)&&(accepted<allottedCount||!hasAcceptedQotd(run))))return false;
   runs[archiveId] = {...run, id: archiveId};
   delete runs[date];
   return true;
@@ -44,9 +48,9 @@ export function automaticRetryDecision(run, config, now = new Date()) {
   if (!config.autoMode || !config.leetcode?.enabled) return {due:false, reason:'Auto Mode is off'};
   if (clock.time < config.dailyStartTime) return {due:false, reason:`Scheduled for ${config.dailyStartTime}`};
   if (!run) return {due:true, reason:'Scheduled time passed; starting now'};
-  if (run.status==='review') return {due:false,reason:'Drafts are ready. Review and submit them yourself on LeetCode.'};
   if (run.reviewRequired) return {due:false, reason:'Submission safety limit reached; review this question before trying again'};
-  if (run.status === 'completed' || ((run.tasks || []).filter(t=>t.status==='accepted').length >= config.dailyQuestionCount&&hasAcceptedQotd(run))) return {due:false, reason:'Daily target completed'};
+  if ((run.tasks || []).filter(t=>t.status==='accepted').length >= config.dailyQuestionCount&&hasAcceptedQotd(run)) return {due:false, reason:'Daily target completed'};
+  if (['review','prepared','completed'].includes(run.status)) return {due:true,reason:'The full daily allotment still needs accepted results; resuming remaining questions.'};
   if (ACTIVE.has(run.status)) return {due:false, reason:'Daily run is in progress'};
   if (run.status === 'stopped') return {due:false, reason:'Stopped manually; use Retry today to resume'};
   if (!['failed','blocked','interrupted'].includes(run.status)) return {due:false, reason:'Daily run is already scheduled'};
@@ -161,10 +165,12 @@ export class LeetCodeRunner {
     try {
       const runs = await this.io.load();
       if (!manual && (!config.autoMode || clock.time < config.dailyStartTime || TERMINAL.has(dailyRunForAccount(runs,clock.date,accountUsername)?.status))) return;
+      const acceptedResume=structuredClone(resumeTasks).filter(t=>t.status==='accepted');
+      const resumeLimit=acceptedResume.some(t=>t.problem?.selection==='QOTD')?config.dailyQuestionCount:Math.max(0,config.dailyQuestionCount-1);
       run = {id: active.id, date: clock.date, mode: manual ? 'manual' : 'automatic',
         target: requestedSlug ? 1 : manual ? manualTarget : config.dailyQuestionCount, status: 'discovering',
         startedAt: this.io.now().toISOString(), username:accountUsername, retryNumber,
-        tasks: manual ? [] : structuredClone(resumeTasks).filter(t=>t.status==='accepted').slice(0,config.dailyQuestionCount)};
+        tasks: manual ? [] : acceptedResume.slice(0,resumeLimit)};
       this.currentRun=run;
       await this.io.save(run);
       if (active.stop) return await this.finishStopped(run);
@@ -217,6 +223,7 @@ export class LeetCodeRunner {
       run.status = 'running';
       await this.io.save(run);
       for (const task of run.tasks) {
+        const reviewTask=config.reviewBeforeSubmit&&manual;
         const priorTasks=priorTasksFor(task.problem.titleSlug);
         const priorSubmissionKeys=new Set(priorTasks.flatMap(t=>(t.submissionHistory||[]).map(a=>
           a.submissionId?`id:${a.submissionId}`:`attempt:${a.at}:${a.fingerprint}`)));
@@ -227,7 +234,7 @@ export class LeetCodeRunner {
         task.submittedCodeFingerprints ||= [];
         while (task.status !== 'accepted' && task.attempts < config.maxAttempts) {
           if (active.stop) return await this.finishStopped(run);
-          if(!config.reviewBeforeSubmit&&priorSubmissions+task.submissionAttempts>=DAILY_SUBMISSION_LIMIT){
+          if(!reviewTask&&priorSubmissions+task.submissionAttempts>=DAILY_SUBMISSION_LIMIT){
             task.status='failed';task.feedback=`Submission safety limit (${DAILY_SUBMISSION_LIMIT} per question per day) reached. Review the solution before another submission.`;
             run.reviewRequired=true;break;
           }
@@ -288,7 +295,7 @@ export class LeetCodeRunner {
             await this.io.save(run);break;
           }
           const fingerprint=codeFingerprint(solution.code);
-          if(config.reviewBeforeSubmit){
+          if(reviewTask){
             task.status='review';task.feedback='Syntax and examples passed. Review this draft and submit it yourself on LeetCode.';
             await this.io.save(run);break;
           }
@@ -323,16 +330,16 @@ export class LeetCodeRunner {
         if (!['accepted','blocked','review'].includes(task.status)) task.status = 'failed';
         await this.io.save(run);
         if (task.status === 'blocked') break;
-        if(!manual&&!config.reviewBeforeSubmit&&task.problem?.selection==='QOTD'&&task.status!=='accepted')break;
+        if(!manual&&task.problem?.selection==='QOTD'&&task.status!=='accepted')break;
       }
-      if(!manual&&!config.reviewBeforeSubmit&&!hasAcceptedQotd(run))for(const task of run.tasks){
+      if(!manual&&!hasAcceptedQotd(run))for(const task of run.tasks){
         if(task.status==='pending'){
           task.status='skipped';task.feedback='QOTD must be accepted before other daily questions start.';
         }
       }
       const readyCount = run.tasks.filter(t => t.status === 'accepted').length;
       run.status = readyCount === run.target && (manual||hasAcceptedQotd(run)) ? 'completed' : run.tasks.some(t => t.status === 'blocked') ? 'blocked' : 'failed';
-      if(config.reviewBeforeSubmit&&run.tasks.length===run.target&&run.tasks.every(t=>['review','accepted'].includes(t.status)))run.status='review';
+      if(config.reviewBeforeSubmit&&run.tasks.length===run.target&&run.tasks.some(t=>t.status==='review')&&run.tasks.every(t=>['review','accepted'].includes(t.status))&&(manual||hasAcceptedQotd(run)))run.status='review';
       if (run.status === 'blocked') for (const task of run.tasks) if (task.status === 'pending') {task.status='skipped';task.feedback='Earlier question was blocked; retry after fixing the provider.';}
       run.finishedAt = this.io.now().toISOString();
       if (!manual && !['completed','review'].includes(run.status)&&!run.reviewRequired) run.nextRetryAt = nextHourlyRetryAt(config,this.io.now());

@@ -239,7 +239,7 @@ async function poll(){
       if(decision.due&&!providerReady){decision.due=false;decision.reason='Save a working Groq or Gemini key in Settings before daily practice can start.';}
       const inactiveGap=lastPollAt&&Date.now()-lastPollAt>5*60000;
       if(!state.config.autoMode)diagnostic={kind:'paused',message:'Auto Mode is off. Turn it on in Settings.',updatedAt:new Date().toISOString()};
-      else if(live?.status==='completed')diagnostic={kind:'completed',message:`${live.tasks.filter(t=>t.status==='accepted').length}/${live.target} accepted today.`,updatedAt:new Date().toISOString()};
+      else if(live?.status==='completed'&&!decision.due)diagnostic={kind:'completed',message:`${live.tasks.filter(t=>t.status==='accepted').length}/${state.config.dailyQuestionCount} accepted today.`,updatedAt:new Date().toISOString()};
       else if(accountCheckFailed)diagnostic={kind:'connection',message:`Could not verify the LeetCode session: ${accountError}. This may be temporary; the next scheduled check will retry.`,updatedAt:new Date().toISOString()};
       else if(!accountVerified)diagnostic={kind:'login',message:account?'LeetCode login has not been verified in this browser yet. The next session check will retry.':'LeetCode is signed out in this browser profile. Sign in to resume daily work.',updatedAt:new Date().toISOString()};
       else if(previousRun?.status==='failed'||previousRun?.status==='blocked')diagnostic={kind:previousRun.status,message:`${previousRun.tasks.find(t=>['failed','blocked'].includes(t.status))?.feedback||previousRun.feedback||'Attempt failed'}. ${decision.reason}.`,nextRetryAt:decision.nextAt||'',updatedAt:new Date().toISOString()};
@@ -249,7 +249,7 @@ async function poll(){
         const retryNumber=previousRun?(previousRun.retryNumber||0)+1:movedRetryNumber;
         if(live){
           const archiveId=`automatic-history:${clock.date}:${crypto.randomUUID()}`;
-          if(!archiveRetryableAutomaticRun(leetcodeRuns,liveKey,archiveId))throw Error('Could not save previous daily attempt');
+          if(!archiveRetryableAutomaticRun(leetcodeRuns,liveKey,archiveId,state.config.dailyQuestionCount))throw Error('Could not save previous daily attempt');
           await chrome.storage.local.set({leetcodeRuns});
         }
         const started=startRun(state.config,false,state.config.dailyQuestionCount,account,'',resumeTasks,retryNumber);
@@ -257,7 +257,8 @@ async function poll(){
       }
     }
     const today=state.config.leetcode?.enabled?live:state.jobs.find(j=>j.id==='daily:'+state.today),errors=fresh.some(n=>n.kind==='error')||today?.status==='blocked'||today?.status==='failed';
-    await chrome.action.setBadgeText({text:today?.status==='completed'?`${today.target||state.config.dailyQuestionCount}/${today.target||state.config.dailyQuestionCount}`:state.config.leetcode?.enabled&&accountCheckFailed?'CHECK':state.config.leetcode?.enabled&&!account?'LOGIN':state.config.leetcode?.enabled&&!accountVerified?'CHECK':errors?'!':''});
+    const dailyCompleted=today?.status==='completed'&&(!state.config.leetcode?.enabled||today.tasks.filter(t=>t.status==='accepted').length>=state.config.dailyQuestionCount&&today.tasks.some(t=>t.problem?.selection==='QOTD'&&t.status==='accepted'));
+    await chrome.action.setBadgeText({text:dailyCompleted?`${state.config.dailyQuestionCount}/${state.config.dailyQuestionCount}`:state.config.leetcode?.enabled&&accountCheckFailed?'CHECK':state.config.leetcode?.enabled&&!account?'LOGIN':state.config.leetcode?.enabled&&!accountVerified?'CHECK':errors?'!':''});
     await chrome.action.setBadgeBackgroundColor({color:errors?'#ef6a65':'#318f79'});
     await chrome.storage.local.set({seenNotifications:state.notifications.map(n=>n.id),lastConnected:Date.now(),lastPollAt:Date.now(),lastState:state,dailyDiagnostic:diagnostic});
   }catch(error){
@@ -370,7 +371,7 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
       const archiveId=`automatic-history:${clock.date}:${crypto.randomUUID()}`;
       if(!archiveRetryableAutomaticRun(leetcodeRuns,run.id||clock.date,archiveId))throw Error('Could not archive the previous run');
       await chrome.storage.local.set({leetcodeRuns});
-      return {ok:true,...startRun(state.config,false,state.config.dailyQuestionCount,account)};
+      return {ok:true,...startRun(state.config,false,state.config.dailyQuestionCount,account,'',(run.tasks||[]).filter(t=>t.status==='accepted'),(run.retryNumber||0)+1)};
     })().then(sendResponse).catch(async error=>{if(!runner.active)await closeAgentLeetCodeTab().catch(()=>{});sendResponse({ok:false,error:error.message});});
     return true;
   }
