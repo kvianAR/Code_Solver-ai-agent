@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.1.1 — Compact extension popup
+
+- Fit status, daily progress, seven-day history, schedule reason and all actions into a compact popup.
+- Place Solve and Learn side by side and remove unused message space while keeping Stop and feedback visible.
+- Preserve daily solving, QOTD requirements and connection behavior.
+
 ## 3.1.0 — Daily reliability and personal practice
 
 - Check readiness shortly before scheduled daily work, including syntax, remaining budget and provider model catalogs. Check again at the due time; handle schedules around midnight.
