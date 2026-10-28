@@ -25,7 +25,7 @@ export function validateBackup(input,currentConfig){
   if(!dailyProgress||typeof dailyProgress!=='object'||Array.isArray(dailyProgress)||Object.keys(dailyProgress).length>100)throw Error('Invalid daily progress backup');
   for(const [date,accounts] of Object.entries(dailyProgress)){
     if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!accounts||typeof accounts!=='object'||Array.isArray(accounts)||Object.keys(accounts).length>100)throw Error('Invalid daily progress backup');
-    for(const [account,row] of Object.entries(accounts))if(!/^account:[\w-]{1,40}$/.test(account)||!row||!Number.isInteger(row.accepted)||row.accepted<0||row.accepted>100||typeof row.qotdAccepted!=='boolean'||row.target!==undefined&&(!Number.isInteger(row.target)||row.target<1||row.target>10))throw Error('Invalid daily progress record');
+    for(const [account,row] of Object.entries(accounts))if(!/^account:[\w-]{1,40}$/.test(account)||!row||!Number.isInteger(row.accepted)||row.accepted<0||row.accepted>100||typeof row.qotdAccepted!=='boolean'||row.qotdExempt!==undefined&&!['','already-accepted','three-approaches-failed'].includes(row.qotdExempt)||row.target!==undefined&&(!Number.isInteger(row.target)||row.target<1||row.target>10))throw Error('Invalid daily progress record');
   }
   return {config,jobs,dailyProgress,study:portableStudy(clean(input.study)),extensionRuns:runs(input.extensionRuns||{})};
 }

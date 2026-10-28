@@ -26,7 +26,7 @@
   function render(){
     if(!state)return;
     const c=state.config,p=state.dailyProtection;
-    $('#protected-daily-budget').textContent=p?`${p.tokens.toLocaleString()} tokens protected for ${p.remaining} remaining allotted questions. QOTD and the full daily count stay mandatory.`:'Daily allowance will appear after the next server update.';
+    $('#protected-daily-budget').textContent=p?`${p.tokens.toLocaleString()} tokens protected for ${p.remaining} remaining allotted questions. The full accepted count stays mandatory; QOTD replacements follow your three-approach policy.`:'Daily allowance will appear after the next server update.';
     $('#provider-recovery').textContent=Object.entries(state.providerCooldowns||{}).filter(([,row])=>Date.parse(row.until)>Date.now()).map(([name,row])=>`${name} retries after ${formatDate(row.until,{hour:'2-digit',minute:'2-digit'})}`).join(' · ');
     const f=$('#reliability-settings');if(!f.contains(document.activeElement)){f.elements.dailyReservePerQuestion.value=c.dailyReservePerQuestion||6000;f.elements.providerCooldownSeconds.value=c.providerCooldownSeconds||120;}
     const local=$('#local-ai-settings');if(!local.contains(document.activeElement)){

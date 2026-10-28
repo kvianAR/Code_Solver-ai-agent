@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.3.0 — Three-approach retries and Easy replacements
+
+- Replace an already-accepted QOTD with the full configured count of other untouched questions; retain current-day accepted progress on retries.
+- Request up to three different named algorithms and distinct drafts per unsuccessful automatic question. Persist approach outcomes across retry archives and browser restarts. Syntax/example failures and known judge rejections count; outages and unknown results do not.
+- Skip only after three distinct failed approaches, then select a random untouched Easy replacement. Preserve untried questions as queued. Retain pending questions in retry discovery rather than silently abandoning them.
+- Stop and notify on the third skipped question per account/local day. Preserve the cap through explicit Stop, retries, archives and restored active history. Display the cap in the popup and approach/skip history in the dashboard.
+- Raise the judged-submission cap to three per question/account/local day while retaining duplicate and unknown-result safeguards.
+- Show temporary preflight rate limits as waiting and migrate old untried skipped labels to queued. Rate limits keep scheduled retry behavior and never trigger a blind judged submission.
+- Reconcile saved pending submission IDs after Stop without starting new work, and update the corresponding approach outcome when the judge result is recovered.
+- Carry explicit QOTD replacement reasons through daily priority budgets, deadline checks, weekly reports and backups. A replacement does not fabricate an accepted QOTD.
+
+Live Chrome and LeetCode behavior still needs verification after reloading the installed extension. Named algorithms and distinct code do not prove semantic algorithm independence. Source/package tests use mocked judges and providers.
+
 ## 3.2.0 — Recovery, revision and checked updates
 
 - Resume missed daily work on startup, network recovery and LeetCode page loads. Merge accepted progress across same-day account archives, retaining QOTD first. Recheck login promptly after a wake gap or interrupted run.

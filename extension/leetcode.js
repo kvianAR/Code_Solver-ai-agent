@@ -51,7 +51,7 @@
       return{username:user.username,questions:[selected]};
     }
     const allowed=new Set(options.allowedDifficulties||['Easy','Medium','Hard']),chosen=[],seen=new Set(options.excludeSlugs||[]);
-    let qotdNote='';
+    let qotdNote='',qotdAlreadyAccepted='';
     if(options.requireQotd||options.preferQuestionOfTheDay){
       try{
         const daily=(await graphql(DAILY_QUERY)).activeDailyCodingChallengeQuestion?.question;
@@ -59,10 +59,17 @@
         else if(!options.requireQotd&&(options.acceptedTodaySlugs||[]).includes(daily.titleSlug))qotdNote=`QOTD ${daily.title} was already accepted today; using another question.`;
         else{
           const full=await question(daily.titleSlug,options.language);
-          if(full&&!full.paidOnly){full.selection='QOTD';full.alreadyAcceptedToday=(options.acceptedTodaySlugs||[]).includes(full.titleSlug);chosen.push(full);seen.add(full.titleSlug);qotdNote=`QOTD selected: ${full.title}.`;}
+          if(full&&!full.paidOnly&&options.skipAcceptedQotd&&(String(full.status).toLowerCase()==='ac'||(options.acceptedTodaySlugs||[]).includes(full.titleSlug))){qotdAlreadyAccepted=full.titleSlug;seen.add(full.titleSlug);qotdNote='QOTD is already accepted; selecting the full configured count of other untouched questions.';}
+          else if(full&&!full.paidOnly){full.selection='QOTD';full.alreadyAcceptedToday=(options.acceptedTodaySlugs||[]).includes(full.titleSlug);chosen.push(full);seen.add(full.titleSlug);qotdNote=`QOTD selected: ${full.title}.`;}
           else {if(options.requireQotd)throw Error('Today’s QOTD is unavailable or Premium');qotdNote='QOTD is unavailable or Premium; using another question.';}
         }
       }catch(error){if(options.requireQotd)throw Error(`QOTD required: ${error.message}`);qotdNote='QOTD lookup failed; using another question.';}
+    }
+    for(const slug of (options.retrySlugs||[]).slice(0,10)){
+      if(chosen.length>=options.count)break;
+      if(!/^[a-z0-9-]+$/.test(slug)||(options.acceptedTodaySlugs||[]).includes(slug)||chosen.some(q=>q.titleSlug===slug))continue;
+      const q=await question(slug,options.language);
+      if(q&&!q.paidOnly&&q.status!=='ac'&&allowed.has(q.difficulty)){q.selection='RETRY';chosen.push(q);seen.add(slug);}
     }
     for(const slug of (options.reviewSlugs||[]).slice(0,10)){
       if(chosen.length>=options.count||chosen.some(q=>q.selection==='REVISION'))break;
@@ -82,7 +89,7 @@
         if(q&&!seen.has(q.titleSlug)&&!q.paidOnly&&q.status==null&&allowed.has(q.difficulty)){q.selection='RANDOM';chosen.push(q);seen.add(q.titleSlug);}
       }
     }
-    if(!chosen.length)throw Error('No untouched eligible LeetCode question found');return{username:user.username,questions:chosen,qotdNote};
+    if(!chosen.length)throw Error('No untouched eligible LeetCode question found');return{username:user.username,questions:chosen,qotdNote,qotdAlreadyAccepted};
   }
   const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   async function preflight(problem,code,expectedUsername){

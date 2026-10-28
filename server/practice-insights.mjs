@@ -31,8 +31,8 @@ export function weeklyReport(store,username,date){
   for(let i=6;i>=0;i--){
     const key=dayBefore(date,i),progress=store.state.dailyProgress?.[key]?.['account:'+username.toLowerCase()];
     const attempts=summary.attempts.filter(r=>r.date===key),reviews=revisions.filter(r=>r.date===key),target=progress?.target||store.state.config.dailyQuestionCount;
-    days.push({date:key,accepted:progress?.accepted??null,target,targetEstimated:!progress?.target,qotdAccepted:progress?.qotdAccepted??false,
-      completed:!!progress&&progress.accepted>=target&&progress.qotdAccepted,
+    days.push({date:key,accepted:progress?.accepted??null,target,targetEstimated:!progress?.target,qotdAccepted:progress?.qotdAccepted??false,qotdExempt:progress?.qotdExempt||'',
+      completed:!!progress&&progress.accepted>=target&&!!(progress.qotdAccepted||progress.qotdExempt),
       independentSolved:attempts.filter(r=>r.source==='independent'&&r.solved).length,independentAttempts:attempts.filter(r=>r.source==='independent').length,
       assistedAttempts:attempts.filter(r=>r.source!=='independent').length,quizCorrect:reviews.filter(r=>r.correct).length,quizAttempts:reviews.length});
   }

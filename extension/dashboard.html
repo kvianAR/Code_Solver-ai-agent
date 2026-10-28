@@ -188,7 +188,7 @@
 <div class="card form-grid" id="history-filters">
 <label>Account<input id="history-account" type="search" placeholder="All accounts"></label>
 <label>Date<input id="history-date" type="date"></label>
-<label>Status<select id="history-status"><option value="">All statuses</option><option value="completed">Completed</option><option value="review">Ready for review</option><option value="running">Running</option><option value="failed">Failed</option><option value="blocked">Blocked</option><option value="interrupted">Interrupted</option><option value="stopped">Stopped</option></select></label>
+<label>Status<select id="history-status"><option value="">All statuses</option><option value="completed">Completed</option><option value="review">Ready for review</option><option value="running">Running</option><option value="failed">Failed</option><option value="blocked">Blocked</option><option value="waiting">Waiting</option><option value="interrupted">Interrupted</option><option value="stopped">Stopped</option></select></label>
 </div>
 <div id="history" class="stack">
 </div>
@@ -267,7 +267,7 @@
 <input name="autoMode" type="checkbox"> Run automatically at the selected time</label>
 <label><input name="reviewBeforeSubmit" type="checkbox"> Review manual drafts before submitting; all automatic daily allotted questions are submitted after checks</label>
 <label>
-<input name="preferQuestionOfTheDay" type="checkbox" checked disabled> Automatic daily run requires QOTD; the remaining question is random</label>
+<input name="preferQuestionOfTheDay" type="checkbox" checked disabled> QOTD first if unsolved; already-solved QOTD is replaced</label>
 </div>
 <div class="checks">
 <span>Allowed difficulties:</span>
@@ -279,7 +279,7 @@
 <input name="Hard" type="checkbox"> Hard</label>
 </div>
 <button class="primary">Save settings</button>
-<p class="muted">Question count applies to automatic sessions. Manual Prepare uses the custom count on the Today page (1–100). Solutions are submitted on the currently signed-in LeetCode account. To protect accuracy, each question gets at most two judged submissions per day; repeated code and uncertain submissions pause for review.</p>
+<p class="muted">Question count applies to automatic sessions. Manual Prepare uses the custom count on the Today page (1–100). Solutions are submitted on the currently signed-in LeetCode account. To protect accuracy, each question gets at most three judged submissions per day; repeated code and uncertain submissions pause for review.</p>
 </form>
 <div class="card">
 <h2>Run while this Mac is sleeping</h2>
@@ -290,7 +290,7 @@
 </div>
 <div id="provider-cards" class="stack">
 </div>
-<form id="reliability-settings" class="card"><h2>Protect daily completion</h2><div class="form-grid"><label>Reserved tokens per remaining daily question<input name="dailyReservePerQuestion" type="number" min="1000" max="100000" required></label><label>Provider cooldown (seconds)<input name="providerCooldownSeconds" type="number" min="30" max="1800" required></label></div><p class="muted">The full allotted count and QOTD remain mandatory. Optional work waits when the daily allowance is needed.</p><button class="primary">Save reliability controls</button></form>
+<form id="reliability-settings" class="card"><h2>Protect daily completion</h2><div class="form-grid"><label>Reserved tokens per remaining daily question<input name="dailyReservePerQuestion" type="number" min="1000" max="100000" required></label><label>Provider cooldown (seconds)<input name="providerCooldownSeconds" type="number" min="30" max="1800" required></label></div><p class="muted">The full accepted count remains mandatory. Already-solved QOTD or three failed approaches allow a replacement. Optional work waits when the daily allowance is needed.</p><button class="primary">Save reliability controls</button></form>
 <form id="local-ai-settings" class="card"><h2>Local AI: Ollama or LM Studio</h2><div class="checks"><label><input name="enabled" type="checkbox"> Enable an already installed local model</label><label><input name="cloudFallback" type="checkbox"> Allow cloud fallback</label></div><div class="form-grid"><label>Runtime<select name="backend"><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option></select></label><label>Loopback server URL<input name="baseUrl" type="url" required></label><label>Installed model<input name="model" list="local-model-list"><datalist id="local-model-list"></datalist></label><label>Provider preference<select name="preference"><option value="local-first">Local first</option><option value="cloud-first">Cloud first</option></select></label><label>Optional local API key<input name="key" type="password" autocomplete="off" placeholder="Leave blank to keep existing key"></label></div><div class="checks"><button class="primary">Save local AI</button><button id="local-models" type="button">Save and load installed models</button><button id="local-test" type="button">Test local JSON and syntax</button></div><p id="local-ai-result" class="muted"></p><p class="muted">No models are downloaded automatically. Local inference uses your Mac. Cloud fallback sends problem data to your configured cloud provider. With fallback off, an unavailable local model can block daily work. Disabling Local AI restores normal cloud routing.</p></form>
 <form id="advanced-settings" class="card"><h2>Practice and spending controls</h2>
 <div class="checks"><label><input type="checkbox" name="additionalChecks"> Check generated boundary inputs with LeetCode</label><label><input type="checkbox" name="adaptivePractice"> Prefer weak topics and spaced revision</label></div>

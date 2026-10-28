@@ -22,7 +22,7 @@ async function refresh(){
   $('#account').textContent=leetcodeSession?.status==='unavailable'?'LeetCode login check unavailable':leetcodeSession?.status==='signed-out'?'LeetCode login needed':account?`Last verified: ${account}`:'LeetCode login not yet checked';
   $('#today-progress').textContent=`${accepted}/${todayTarget}`;
   $('#ring').style.setProperty('--progress',`${Math.min(100,Math.round(accepted/todayTarget*100))}%`);
-  $('#run-status').textContent=live?.activeId?'Solving now':daily?.status?daily.status.charAt(0).toUpperCase()+daily.status.slice(1):config.autoMode?'Scheduled':'Auto Mode paused';
+  $('#run-status').textContent=live?.activeId?'Solving now':daily?.reviewReason==='daily-skip-limit'?'3 skips · Needs attention':daily?.status?daily.status.charAt(0).toUpperCase()+daily.status.slice(1):config.autoMode?'Scheduled':'Auto Mode paused';
   $('#schedule').textContent=daily?.status==='completed'&&todayTarget!==target?`Tomorrow: ${target} questions at ${config.dailyStartTime} · ${zone}`:config.dailyStartTime?`Daily at ${config.dailyStartTime} · ${zone}`:'Set a daily time in dashboard';
   $('#diagnosis').textContent=dailyDiagnostic?.message||'Waiting for the next scheduler check.';
   let streak=0,day=new Date(`${today}T12:00:00Z`);

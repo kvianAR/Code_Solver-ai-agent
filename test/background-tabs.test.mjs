@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
-import {acceptedDailyTasks,deadlineNotice,connectionHealth} from '../extension/daily-recovery.js';
-import {readinessTarget} from '../extension/leetcode-runner.js';
+import {acceptedDailyTasks,dailyQotdDisposition,deadlineNotice,connectionHealth} from '../extension/daily-recovery.js';
+import {qotdSatisfied,readinessTarget} from '../extension/leetcode-runner.js';
 
 const source=readFileSync(new URL('../extension/background.js',import.meta.url),'utf8')
   .replace(/^import .*?;\n/gm,'');
@@ -39,7 +39,7 @@ async function runPoll(due,precheck=false,sessionResponse={ok:true,value:{signed
     async recover(){}
     start(...args){started.push(args);this.done=Promise.resolve();return {started:true,id:'automatic:2026-10-06:testuser'};}
   }
-  runInNewContext(source,{acceptedDailyTasks,deadlineNotice,connectionHealth,readinessTarget,chrome,LeetCodeRunner:Runner,activeContest:()=>null,contestRefreshDue:()=>false,
+  runInNewContext(source,{qotdSatisfied,acceptedDailyTasks,dailyQotdDisposition,deadlineNotice,connectionHealth,readinessTarget,chrome,LeetCodeRunner:Runner,activeContest:()=>null,contestRefreshDue:()=>false,
     localClock:()=>({date:'2026-10-06',time:'12:00'}),dailyRunForAccount:()=>null,
     latestArchivedAutomaticRun:()=>null,automaticRetryDecision:()=>({due}),loginPrecheckDue:()=>precheck,
     archiveRetryableAutomaticRun:()=>false,shouldRetryForLaterSchedule:()=>false,

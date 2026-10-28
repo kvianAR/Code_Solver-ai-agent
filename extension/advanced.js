@@ -19,7 +19,7 @@
     $('#usage-breakdown').insertAdjacentHTML('beforeend',`<p class="muted">${sessions.length} recorded sessions · Current limit: ${c.sessionTokenBudget||100000} tokens and ${c.maxSessionCalls||32} AI calls per session.</p>`);
     if(sessions.length)$('#usage-breakdown').insertAdjacentHTML('beforeend','<details><summary>Latest session usage</summary><table><thead><tr><th>Session</th><th>Calls</th><th>Tokens</th><th>Estimated USD</th></tr></thead><tbody>'+sessions.slice(0,5).map(([id,row])=>`<tr><td>${id.startsWith('learning:')?'Learning':id.startsWith('interview:')?'Mock interview':id.startsWith('automatic:')||id.startsWith('daily:')?'Daily practice':id.startsWith('provider-test:')||id==='local-test'?'Provider check':'Manual practice'}</td><td>${row.calls}</td><td>${row.tokens.toLocaleString()}</td><td>${(row.unpricedCalls||row.unpricedCalls===undefined&&row.calls)?'Unknown / partially priced':'$'+row.estimatedCostUSD.toFixed(4)}</td></tr>`).join('')+'</tbody></table></details>');
     const failure=globalThis.failureGuide.explain(dailyDiagnostic?.message||'');
-    $('#failure-action').textContent=['blocked','failed','connection','login','provider'].includes(dailyDiagnostic?.kind)?failure.summary+' '+failure.action:'';
+    $('#failure-action').textContent=['blocked','waiting','failed','connection','login','provider'].includes(dailyDiagnostic?.kind)?failure.summary+' '+failure.action:'';
     $('#browser-self-check').disabled=!extension;
   }
   async function loadQuestion(){

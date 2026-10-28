@@ -39,3 +39,16 @@ test('daily discovery retries a temporary fetch failure and selects QOTD plus an
   assert.equal(listCalls,1);
   assert.ok(calls>=5);
 });
+
+test('an already-accepted QOTD is excluded and replaced by the full count of untouched problems',async()=>{
+  let listener;const fetch=async(_url,request)=>{const {query,variables}=JSON.parse(request.body);let data;
+    if(query.includes('userStatus'))data={userStatus:{isSignedIn:true,username:'Student'}};
+    else if(query.includes('activeDailyCodingChallengeQuestion'))data={activeDailyCodingChallengeQuestion:{question:{titleSlug:'old-qotd'}}};
+    else if(query.includes('questionList('))data={problemsetQuestionList:{total:2,questions:['first-new','second-new'].map(titleSlug=>({titleSlug,difficulty:'Easy',status:null,paidOnly:false}))}};
+    else data={question:{questionId:'1',title:variables.titleSlug,titleSlug:variables.titleSlug,difficulty:'Easy',status:variables.titleSlug==='old-qotd'?'ac':null,content:'Solve',codeSnippets:[{langSlug:'python3',code:'class Solution: pass'}],topicTags:[]}};
+    return {ok:true,json:async()=>({data})};};
+  const sandbox={fetch,chrome:{runtime:{onMessage:{addListener(fn){listener=fn;}}}},DOMParser:class{parseFromString(html){return {querySelectorAll(){return [];},body:{textContent:html}};}},crypto:{getRandomValues(bytes){bytes[0]=0;return bytes;}},setTimeout:fn=>fn()};
+  runInNewContext(readFileSync(new URL('../extension/leetcode.js',import.meta.url),'utf8'),sandbox);
+  const result=await new Promise(resolve=>listener({type:'leetcode-discover',options:{username:'Student',enforceUsername:true,language:'python',count:2,allowedDifficulties:['Easy'],requireQotd:true,skipAcceptedQotd:true,selectionMode:'random'}},{},resolve));
+  assert.equal(result.ok,true,result.error);assert.equal(result.value.qotdAlreadyAccepted,'old-qotd');assert.equal(result.value.questions.length,2);assert.equal(result.value.questions.some(q=>q.titleSlug==='old-qotd'),false);assert.equal(result.value.questions.every(q=>q.status===null),true);
+});

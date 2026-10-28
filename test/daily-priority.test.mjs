@@ -29,3 +29,9 @@ test('readiness checks model catalogs without making a generation request',async
     const report=await dailyReadiness(s,date);assert.equal(report.ready,true);assert.equal(requests,1);assert.equal(Object.keys(s.state.usage).length,0);assert.ok(!JSON.stringify(report).includes('fake-key'));
   }finally{globalThis.fetch=original;}
 });
+
+test('an explicit QOTD replacement keeps the full acceptance target without reserving an extra QOTD slot',()=>{
+  const store={state:{config:{autoMode:true,leetcode:{enabled:true},dailyQuestionCount:2,dailyTokenBudget:100000,maxOutputTokens:4096,dailyReservePerQuestion:6000},dailyProgress:{'2026-10-28':{'account:student':{accepted:2,qotdAccepted:false,qotdExempt:'already-accepted'}}}}};
+  assert.equal(dailyProtection(store,'2026-10-28').remaining,0);
+  store.state.dailyProgress['2026-10-28']['account:student'].accepted=1;assert.equal(dailyProtection(store,'2026-10-28').remaining,1);
+});

@@ -1,4 +1,4 @@
-import {localClock,hasAcceptedQotd} from './leetcode-runner.js';
+import {localClock,hasAcceptedQotd,qotdSatisfied} from './leetcode-runner.js';
 
 export function acceptedDailyTasks(runs,date,username){
   if(!username)return [];
@@ -11,11 +11,17 @@ export function acceptedDailyTasks(runs,date,username){
   }
   return [...tasks.values()].sort((a,b)=>Number(b.problem.selection==='QOTD')-Number(a.problem.selection==='QOTD'));
 }
+export function dailyQotdDisposition(runs,date,username){
+  if(!username)return '';
+  const daily=Object.values(runs).filter(r=>r.mode==='automatic'&&r.date===date&&r.username?.toLowerCase()===username.toLowerCase());
+  if(daily.some(hasAcceptedQotd))return '';
+  return daily.find(r=>qotdSatisfied(r))?.qotdDisposition||'';
+}
 export function deadlineNotice(config,runs,username,diagnostic={},now=new Date()){
   if(!config.autoMode||!config.leetcode?.enabled||!username)return null;
   const clock=localClock(config.timezone,now),minutes=1440-Number(clock.time.slice(0,2))*60-Number(clock.time.slice(3));
   if(clock.time<config.dailyStartTime||minutes>60)return null;
-  const tasks=acceptedDailyTasks(runs,clock.date,username),qotdPending=!hasAcceptedQotd({tasks}),remaining=Math.max(qotdPending?1:0,config.dailyQuestionCount-tasks.length);
+  const tasks=acceptedDailyTasks(runs,clock.date,username),qotdPending=!hasAcceptedQotd({tasks})&&!dailyQotdDisposition(runs,clock.date,username),remaining=Math.max(qotdPending?1:0,config.dailyQuestionCount-tasks.length);
   if(!remaining&&!qotdPending)return null;
   const level=minutes<=15?15:60;
   return {key:`${clock.date}:${username.toLowerCase()}:${level}`,date:clock.date,level,remaining,qotdPending,

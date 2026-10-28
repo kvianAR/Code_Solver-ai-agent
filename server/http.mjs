@@ -163,7 +163,7 @@ export function createServer(store,platform,agent,options={}) {
         const providers=generationProviders(c,input.avoidProvider);
         for(const provider of providers) {
           if(!providerAvailable(store,provider))continue;
-          const prompt=interviewFeedback?interviewPrompt(interviewRow,c.language):learning?learningPrompt(input.problem,c.language,input.stage,input.code||''):leetcodeSolutionPrompt(input.problem,c.language,input.feedback||'');
+          const prompt=interviewFeedback?interviewPrompt(interviewRow,c.language):learning?learningPrompt(input.problem,c.language,input.stage,input.code||''):leetcodeSolutionPrompt(input.problem,c.language,input.feedback||'',input.attemptPlan||{});
           const date=localTime(new Date(),c.timezone).date;
           let reservation;try{reservation=reserveUsage(store,date,provider,input.sessionId,prompt,c.maxOutputTokens,{priority:!learning&&(input.automatic||String(input.sessionId||'').startsWith('automatic:'))?'daily':'optional'});}catch(error){if(provider!=='local'&&providers.includes('local')&&/cost|prices/i.test(error.message)){lastError=error;continue;}throw error;}
           try {

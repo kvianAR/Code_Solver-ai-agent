@@ -8,13 +8,13 @@
   }
   function runs(value){
     if(!value||Array.isArray(value)||typeof value!=='object'||Object.keys(value).length>2000)throw Error('Invalid extension history');
-    const allowed=['completed','review','failed','blocked','stopped','interrupted','prepared','running','discovering','stopping'];
+    const allowed=['completed','review','failed','blocked','waiting','stopped','interrupted','prepared','running','discovering','stopping'];
     const result={};
     for(const [id,row] of Object.entries(value)){
       if(!/^[\w:.-]{1,200}$/.test(id)||['__proto__','constructor','prototype'].includes(id)||!row||!allowed.includes(row.status)||!Array.isArray(row.tasks)||row.tasks.length>100||!/^\d{4}-\d{2}-\d{2}$/.test(row.date||''))throw Error('Invalid run in backup');
       const copy=clean(row);copy.id=id;
       for(const task of copy.tasks){if(!task.problem||typeof task.problem.title!=='string'||typeof task.problem.titleSlug!=='string'||!/^[a-z0-9-]+$/.test(task.problem.titleSlug)||typeof task.status!=='string')throw Error('Invalid task in backup');}
-      if(['running','discovering','stopping'].includes(copy.status)){copy.status='stopped';for(const task of copy.tasks)if(!['accepted','review','failed','blocked'].includes(task.status))task.status='stopped';}
+      if(['running','discovering','stopping'].includes(copy.status)){copy.status='stopped';for(const task of copy.tasks)if(!['accepted','review','failed','blocked','skipped'].includes(task.status))task.status='stopped';}
       result[id]=copy;
     }
     return result;

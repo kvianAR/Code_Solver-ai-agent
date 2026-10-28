@@ -63,21 +63,21 @@ test('Run Code 429 schedules an hourly retry without wasting a judged submission
   const {runner,runs,calls}=fixture({preflight:async()=>{throw Error('LeetCode Run Code unavailable (429)');}});
   runner.start(config,false,2,'Leetcoder071');await runner.done;
   const run=runs[`automatic:${date}:leetcoder071`];
-  assert.equal(run.status,'blocked');
+  assert.equal(run.status,'waiting');
   assert.equal(run.reviewRequired,undefined);
   assert.equal(run.tasks[0].problem.selection,'QOTD');
-  assert.equal(run.tasks[1].status,'skipped');
+  assert.equal(run.tasks[1].status,'queued');
   assert.equal(calls.submitted.length,0);
   assert.equal(automaticRetryDecision(run,config,new Date('2026-09-29T09:00:00Z')).due,true);
 });
 
-test('a failed QOTD prevents other automatic submissions',async()=>{
+test('a repeated unnamed QOTD approach waits without falsely skipping another question',async()=>{
   const {runner,runs,calls}=fixture({preflight:async()=>({ok:false,feedback:'Wrong Answer'})});
   runner.start(config,false,2,'Leetcoder071');await runner.done;
   const run=runs[`automatic:${date}:leetcoder071`];
-  assert.equal(run.status,'failed');
-  assert.equal(run.tasks[0].attempts,8);
-  assert.equal(run.tasks[1].status,'skipped');
+  assert.equal(run.status,'waiting');
+  assert.equal(run.tasks[0].attempts,3);
+  assert.equal(run.tasks[1].status,'queued');
   assert.equal(calls.submitted.length,0);
 });
 
@@ -194,8 +194,8 @@ test('current-tab solve targets only that slug even if previously accepted',asyn
 });
 
 test('syntax-rejected draft is regenerated before review',async()=>{
-  let checks=0;
-  const {runner,runs,calls}=fixture({verify:async problem=>{
+  let checks=0,draft=0;
+  const {runner,runs,calls}=fixture({solve:async()=>({code:'draft '+(++draft),approach:'algorithm-'+draft,provider:'groq'}),verify:async problem=>{
     calls.verified.push(problem.titleSlug);checks++;
     return checks===1?{ok:false,feedback:'Syntax error'}:{ok:true,feedback:'Syntax check passed'};
   }});
@@ -301,10 +301,10 @@ test('Stop during discovery prevents generation; a later manual click works',asy
 test('temporary provider failure waits for the next retry instead of burning eight calls',async()=>{
   let attempts=0;const {runner,runs}=fixture({solve:async()=>{attempts++;throw Error('Temporary provider failure');}});
   runner.start(config);await runner.done;
-  assert.equal(attempts,1);assert.equal(runs[date].status,'blocked');
+  assert.equal(attempts,1);assert.equal(runs[date].status,'waiting');
   assert.equal(runs[date].tasks[0].attempts,1);
   assert.equal(runs[date].tasks[0].retryKind,'network');
-  assert.equal(runs[date].tasks[1].status,'skipped');
+  assert.equal(runs[date].tasks[1].status,'queued');
   runner.start(config);await runner.done;assert.equal(attempts,1);
 });
 
@@ -346,19 +346,19 @@ test('account switch while discovering blocks a session and leaves no pending ta
   assert.ok(run.tasks.every(t=>t.status!=='pending'));
 });
 
-test('provider block marks later questions skipped instead of pending',async()=>{
+test('provider block keeps untried questions queued',async()=>{
   const {runner,runs}=fixture({solve:async()=>{throw Error('API quota or balance unavailable');}});
   runner.start(config);await runner.done;
   const run=runs[date];
   assert.equal(run.status,'blocked');
-  assert.deepEqual(run.tasks.map(t=>t.status),['blocked','skipped']);
+  assert.deepEqual(run.tasks.map(t=>t.status),['blocked','queued']);
 });
 
 test('wrong answer is regenerated until LeetCode accepts it',async()=>{
   let submissions=0;
   let drafts=0;
   const feedbacks=[];
-  const {runner,runs,calls}=fixture({solve:async(_problem,feedback)=>{feedbacks.push(feedback);return {code:`class Solution: pass # revision ${++drafts}`,provider:'groq'};},submit:async problem=>{
+  const {runner,runs,calls}=fixture({solve:async(_problem,feedback)=>{feedbacks.push(feedback);return {code:`class Solution: pass # revision ${++drafts}`,provider:'groq',approach:'algorithm-'+drafts};},submit:async problem=>{
     calls.submitted.push(problem.titleSlug);submissions++;
     return submissions===1?{accepted:false,feedback:'Wrong Answer'}:{accepted:true,submissionId:String(submissions),feedback:'Accepted'};
   }});
@@ -368,22 +368,22 @@ test('wrong answer is regenerated until LeetCode accepts it',async()=>{
   assert.match(feedbacks[1],/Previously rejected code/);
 });
 
-test('only two judged submissions per question are allowed across hourly retries',async()=>{
+test('only three judged submissions per question are allowed across hourly retries',async()=>{
   let drafts=0;
   const first=fixture({discover:async()=>({username:'Leetcoder071',questions:[{titleSlug:'daily-question',title:'Daily question',selection:'QOTD'}]}),
     solve:async()=>({code:`revision ${++drafts}`,provider:'groq'}),
     submit:async problem=>{first.calls.submitted.push(problem.titleSlug);return {accepted:false,feedback:'Wrong Answer'};}});
-  first.runner.start({...config,dailyQuestionCount:1},false,1,'Leetcoder071');await first.runner.done;
-  const failed=first.runs[`automatic:${date}:leetcoder071`];
-  assert.equal(first.calls.submitted.length,2);
-  assert.equal(failed.tasks[0].submissionAttempts,2);
+  first.runner.start({...config,dailyQuestionCount:1},true,1,'Leetcoder071','daily-question');await first.runner.done;
+  const failed=Object.values(first.runs).find(r=>r.mode==='manual');
+  assert.equal(first.calls.submitted.length,3);
+  assert.equal(failed.tasks[0].submissionAttempts,3);
   assert.equal(failed.reviewRequired,true);
-  assert.equal(automaticRetryDecision(failed,config,new Date('2026-09-29T09:00:00Z')).due,false);
+  assert.equal(failed.reviewRequired,true);
   const archiveId='automatic-history:2026-09-29:old';
   first.runs[archiveId]={...failed,id:archiveId};
   delete first.runs[failed.id];
-  first.runner.start({...config,dailyQuestionCount:1},false,1,'Leetcoder071');await first.runner.done;
-  assert.equal(first.calls.submitted.length,2);
+  first.runner.start({...config,dailyQuestionCount:1},true,1,'Leetcoder071','daily-question');await first.runner.done;
+  assert.equal(first.calls.submitted.length,3);
 });
 
 test('archived copies of one judged submission do not consume two daily slots',async()=>{
@@ -406,7 +406,7 @@ test('identical regenerated code is not submitted twice',async()=>{
   runner.start({...config,dailyQuestionCount:1},false,1,'Leetcoder071');await runner.done;
   assert.equal(calls.submitted.length,1);
   const run=runs[`automatic:${date}:leetcoder071`];
-  assert.equal(run.reviewRequired,true);
+  assert.equal(run.status,'waiting');assert.equal(run.skipCount,0);
   assert.equal(run.tasks[0].submissionAttempts,1);
 });
 
@@ -429,11 +429,11 @@ test('unavailable local check does not send unverified code to LeetCode',async()
   assert.equal(run.reviewRequired,true);
 });
 
-test('session failure blocks submission and skips remaining questions',async()=>{
+test('session failure blocks submission and queues remaining questions',async()=>{
   const {runner,runs}=fixture({submit:async()=>{throw Error('LeetCode session token unavailable');}});
   runner.start(config);await runner.done;
   assert.equal(runs[date].status,'blocked');
-  assert.deepEqual(runs[date].tasks.map(task=>task.status),['blocked','skipped']);
+  assert.deepEqual(runs[date].tasks.map(task=>task.status),['blocked','queued']);
 });
 
 test('manual review mode cannot downgrade any automatic allotted question to a draft',async()=>{
@@ -507,9 +507,9 @@ test('an old automatic QOTD review draft is resumable rather than treated as fin
 });
 
 test('automatic QOTD still respects judged limits when review is enabled',async()=>{
-  let draft=0;const {runner,runs,calls}=fixture({solve:async()=>({code:'draft '+(++draft),provider:'groq'}),submit:async problem=>{calls.submitted.push(problem.titleSlug);return {accepted:false,submissionId:String(draft),feedback:'Wrong Answer'};}});
+  let draft=0;const {runner,runs,calls}=fixture({solve:async()=>({code:'draft '+(++draft),provider:'groq',approach:'algorithm-'+draft}),submit:async problem=>{calls.submitted.push(problem.titleSlug);return {accepted:false,submissionId:String(draft),feedback:'Wrong Answer'};}});
   runner.start({...config,reviewBeforeSubmit:true},false,2,'Leetcoder071');await runner.done;
-  const run=Object.values(runs)[0];assert.equal(calls.submitted.length,2);assert.equal(run.reviewRequired,true);assert.notEqual(run.status,'completed');
+  const run=Object.values(runs)[0];assert.equal(calls.submitted.length,3);assert.equal(run.tasks[0].status,'skipped');assert.notEqual(run.status,'completed');
 });
 
 test('raising a completed daily allotment resumes only the additional question today',async()=>{
