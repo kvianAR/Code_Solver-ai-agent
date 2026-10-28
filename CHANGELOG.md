@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.3.2 — Provider output recovery and installed-version visibility
+
+- Request JSON output from the direct Groq endpoint, recognize a bounded solution.code wrapper and strip code-field fences. Reject null/missing/oversized/truncated outputs explicitly as output failures instead of generic temporary outages.
+- Preserve malformed-output evidence when a backup provider is unavailable. Three unusable preparation attempts can replace the stuck question with an Easy problem; a backup outage no longer hides those attempts in an indefinite retry loop.
+- Keep malformed output eligible for provider fallback without cooling down the entire provider on one bad question. Bound each provider attempt to 45 seconds so fallback fits within the client's 180-second generation timeout.
+- Relay typed provider failures and actual cooldown deadlines to the extension. Accept Retry-After HTTP dates and do not shorten explicit provider deadlines to five minutes.
+- Add authenticated, bounded extension heartbeats recording installed version, run/stage status, accepted count, retry time and a canonical blocker. Do not persist statements, code, credentials or arbitrary error text in these reports.
+- Show stale/mismatched installed extension versions in the dashboard. Add an idle-only Apply installed extension update action that reloads Chrome's installed code while retaining history, pauses and limits.
+- Add a credential-free downloadable live check report for browser/version/provider diagnostics.
+
+A live generation call verifies provider output separately from mocked judge tests. Provider availability can change; no synthetic acceptance is written to the daily allotment. Chrome must load the updated extension for heartbeat/version reporting and daily submissions to run.
+
 ## 3.3.1 — Recover rate limits without an hourly stall
 
 - Honor Retry-After seconds and HTTP dates. Persist a browser-wide LeetCode cooldown across tabs/restarts, with one-minute exponential backoff up to 15 minutes when no deadline is provided. Never change questions to evade a server throttle.

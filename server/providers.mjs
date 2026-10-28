@@ -11,14 +11,18 @@ export async function requestJSON(url,options={},timeout=90000) {
     const permanentQuota=/insufficient[_ ]quota|exceeded your current quota|quota exhausted|insufficient[_ ](?:credit|balance)|billing|out of credits|credit balance|daily quota|limit:\s*0/.test(body);
     const kind=[401,403].includes(response.status)?'key': permanentQuota&&response.status!==503?'quota': response.status===429?'rate':response.status>=500?'temporary':'request';
     const messages={key:'API key invalid, expired, or forbidden',quota:'API quota or balance unavailable',rate:'API rate limit reached',temporary:'Provider temporarily unavailable',request:`Provider rejected request (${response.status}); check model and settings`};
-    throw new ProviderError(messages[kind],kind,Math.min(300,Math.max(0,Number(response.headers.get('retry-after'))||0)));
+    const retryHeader=response.headers.get('retry-after'),seconds=retryHeader&&/^\d+(?:\.\d+)?$/.test(retryHeader.trim())?Number(retryHeader):Math.ceil((Date.parse(retryHeader||'')-Date.now())/1000);
+    throw new ProviderError(messages[kind],kind,Number.isFinite(seconds)?Math.max(0,seconds):0);
   }
   try { return await response.json(); } catch {throw new ProviderError('Provider returned invalid JSON');}
 }
 export function decodeSolution(text) {
   let value;
-  try {value=JSON.parse(text.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''));}catch {throw new ProviderError('Model did not return valid solution JSON');}
-  if (typeof value.code!=='string'||!value.code.trim()||value.code.length>60000) throw new ProviderError('Model returned missing or oversized code');
+  try {value=JSON.parse(text.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''));}catch {throw new ProviderError('Model did not return valid solution JSON','output');}
+  if(value&&typeof value==='object'&&typeof value.solution==='object'&&!value.code)value={...value,...value.solution};
+  if(!value||typeof value!=='object'||typeof value.code!=='string'||!value.code.trim()||value.code.length>60000)throw new ProviderError('Model returned missing or oversized code','output');
+  value.code=value.code.trim().replace(/^```(?:python|python3|javascript|js)?\s*\n/i,'').replace(/\n```$/,'').trim();
+  if(!value.code)throw new ProviderError('Model returned empty submission code','output');
   const testCases=(Array.isArray(value.testCases)?value.testCases:[]).filter(t=>t&&typeof t.input==='string'&&t.input.trim()&&t.input.length<=4096).slice(0,4).map(t=>({input:t.input,reason:String(t.reason||'Boundary case').slice(0,200)}));
   return {code:value.code,explanation:String(value.explanation||''),complexity:String(value.complexity||''),approach:String(value.approach||'').slice(0,160),testCases};
 }
@@ -40,11 +44,13 @@ export async function complete(provider,key,model,prompt,config) {
   } else if (provider==='groq') {
     url=(config.groqBaseUrl||'https://api.groq.com/openai/v1').replace(/\/$/,'')+'/chat/completions';
     headers.Authorization=`Bearer ${key}`;
-    body={model,messages:[{role:'user',content:prompt}],max_tokens:config.maxOutputTokens};
+    body={model,messages:[{role:'user',content:prompt}],max_tokens:config.maxOutputTokens,...(new URL(url).hostname==='api.groq.com'?{response_format:{type:'json_object'}}:{})};
   } else throw new ProviderError('Unknown AI provider','request');
   const r=await requestJSON(url,{method:'POST',headers,body:JSON.stringify(body)},config.requestTimeoutSeconds*1000);
   const text=provider==='gemini'?r.candidates?.[0]?.content?.parts?.filter(p=>!p.thought).map(p=>p.text||'').join(''):r.choices?.[0]?.message?.content;
-  if (!text) throw new ProviderError('Provider returned no solution');
+  if (typeof text!=='string'||!text.trim()) throw new ProviderError('Provider returned no solution','output');
+  const finish=provider==='gemini'?r.candidates?.[0]?.finishReason:r.choices?.[0]?.finish_reason;
+  if(['length','MAX_TOKENS'].includes(finish))throw new ProviderError('Provider response was truncated before a complete solution','output');
   const geminiOutput=Number.isFinite(r.usageMetadata?.totalTokenCount)&&Number.isFinite(r.usageMetadata?.promptTokenCount)?r.usageMetadata.totalTokenCount-r.usageMetadata.promptTokenCount:r.usageMetadata?.candidatesTokenCount;
   return {text,tokens:provider==='gemini'?r.usageMetadata?.totalTokenCount:r.usage?.total_tokens,inputTokens:provider==='gemini'?r.usageMetadata?.promptTokenCount:r.usage?.prompt_tokens,outputTokens:provider==='gemini'?geminiOutput:r.usage?.completion_tokens};
 }

@@ -7,7 +7,7 @@ import './practice-plan.js';
 import './failure-guide.js';
 import './self-check.js';
 async function notify(id,title,message){await chrome.notifications.create(id,{type:'basic',iconUrl:'icon.png',title,message:String(message).slice(0,400)});}
-async function serverApi(connection,route,body,signal){const response=await fetch(connection.url+'/api/'+route,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(120000)]):AbortSignal.timeout(120000)});const value=await response.json().catch(()=>({}));if(!response.ok)throw Error(value.error||`Agent request failed (${response.status})`);return value;}
+async function serverApi(connection,route,body,signal){const response=await fetch(connection.url+'/api/'+route,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+connection.token,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(route==='leetcode/solve'?180000:120000)]):AbortSignal.timeout(route==='leetcode/solve'?180000:120000)});const value=await response.json().catch(()=>({}));if(!response.ok)throw bridgeError(value,`Agent request failed (${response.status})`);return value;}
 async function waitForTab(tabId){const current=await chrome.tabs.get(tabId);if(current.status==='complete')return;await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{chrome.tabs.onUpdated.removeListener(listener);reject(Error('LeetCode page load timed out'));},30000);const listener=(id,info)=>{if(id===tabId&&info.status==='complete'){clearTimeout(timer);chrome.tabs.onUpdated.removeListener(listener);resolve();}};chrome.tabs.onUpdated.addListener(listener);});}
 let preferredLeetCodeTabId=null;
 let agentTabCreatePromise=null;
@@ -94,12 +94,27 @@ async function explicitAccount(){
     return account;
   }catch(error){if(!runner.active)await closeAgentLeetCodeTab();throw error;}
 }
+let heartbeatAt=0,heartbeatSignature='';
+async function reportHeartbeat(connection,run=null,force=false){
+  if(!connection)return;
+  const saved=await chrome.storage.local.get(['extensionInstanceId','leetcodeRuns','leetcodeAccount','lastState','dailyDiagnostic']);
+  const instanceId=saved.extensionInstanceId||crypto.randomUUID();if(!saved.extensionInstanceId)await chrome.storage.local.set({extensionInstanceId:instanceId});
+  const date=localClock(saved.lastState?.config?.timezone||'Asia/Kolkata').date;
+  run||=runner.currentRun||dailyRunForAccount(saved.leetcodeRuns||{},date,saved.leetcodeAccount)||null;
+  const task=run?.tasks?.find(t=>t.problem?.titleSlug===run.currentQuestion)||run?.tasks?.find(t=>['blocked','retrying','waiting','failed'].includes(t.status));
+  const message=task?.feedback||run?.feedback||saved.dailyDiagnostic?.message||'';
+  const reason=run?.reviewReason==='daily-skip-limit'?'skip-limit':/invalid.*JSON|missing.*code|oversized|truncated|structured/i.test(message)?'output':/quota|provider|API key/i.test(message)?'provider':/429|rate limit/i.test(message)?'rate':/login|sign in|session|csrf|account changed/i.test(message)?'login':/budget|cost/i.test(message)?'budget':/contest.*live/i.test(message)?'contest':/uncertain.*submission|unknown.*result/i.test(message)?'submission':/network|connection|fetch/i.test(message)?'connection':/syntax|wrong answer|testcase|Run Code failed/i.test(message)?'solution':'none';
+  const payload={instanceId,version:chrome.runtime.getManifest?.().version||'0.0.0',status:run?.status||'idle',stage:task?.status||'idle',accepted:run?.tasks?.filter(t=>t.status==='accepted').length||0,target:run?.target||saved.lastState?.config?.dailyQuestionCount||0,reason,retryAt:run?.nextRetryAt||saved.dailyDiagnostic?.nextRetryAt||''};
+  const signature=JSON.stringify(payload);if(!force&&signature===heartbeatSignature&&Date.now()-heartbeatAt<60000)return;
+  await serverApi(connection,'extension/heartbeat',payload,AbortSignal.timeout(5000));heartbeatAt=Date.now();heartbeatSignature=signature;
+}
 async function saveRun(run) {
   const {leetcodeRuns={}}=await chrome.storage.local.get('leetcodeRuns');
   leetcodeRuns[run.id || run.date]=run;
   await chrome.storage.local.set({leetcodeRuns});
   if(run.mode==='automatic'&&run.status==='retrying'&&run.nextRetryAt&&!run.reviewRequired)await chrome.alarms.create('retry-leetcode',{when:Math.max(Date.now()+1000,Date.parse(run.nextRetryAt))});
   const {connection:progressConnection}=await chrome.storage.local.get('connection');
+  await reportHeartbeat(progressConnection,run).catch(()=>{});
   if(progressConnection&&run.mode==='automatic'&&run.username){const accepted=acceptedDailyTasks(leetcodeRuns,run.date,run.username);try{await serverApi(progressConnection,'leetcode/daily-progress',{date:run.date,username:run.username,accepted:accepted.length,qotdAccepted:accepted.some(t=>t.problem?.selection==='QOTD'),qotdExempt:dailyQotdDisposition(leetcodeRuns,run.date,run.username)});}catch{}}
   if(progressConnection&&run.username){const events=(run.tasks||[]).filter(t=>t.status==='accepted'||t.preflightFailures||(t.submissionHistory||[]).some(a=>a.status==='rejected')).slice(0,100).map(t=>({date:run.date,username:run.username,titleSlug:t.problem.titleSlug,title:t.problem.title,topics:t.problem.topics||[],feedback:String(t.feedback||'').slice(0,2000),code:String(t.solution?.code||'').slice(0,3000),accepted:t.status==='accepted',hadFailure:!!t.preflightFailures||(t.submissionHistory||[]).some(a=>a.status==='rejected')}));if(events.length)try{await serverApi(progressConnection,'study/mistakes',events);}catch{}}
   if(run.mode==='automatic'&&run.status==='completed'){
@@ -219,6 +234,7 @@ async function poll(){
   const{connection,seenNotifications=[],lastPollAt=0,leetcodeAccount:cachedAccount='',lastAgentLoginCheckAt=0}=await chrome.storage.local.get(['connection','seenNotifications','lastPollAt','leetcodeAccount','lastAgentLoginCheckAt']);
   if(!connection){await checkCachedDeadline({message:'Agent connection is missing. Start Practice Ex. and reconnect.'});await chrome.storage.local.set({dailyDiagnostic:{kind:'connection',message:'Agent connection is missing. Open Settings to connect.',updatedAt:new Date().toISOString()},lastPollAt:Date.now()});return;}
   try{
+    await reportHeartbeat(connection).catch(()=>{});
     const state=await serverApi(connection,'state'),fresh=state.notifications.filter(n=>!seenNotifications.includes(n.id));
     for(const n of fresh.slice(0,5).reverse())await notify(n.id,n.title,n.message);
     const {leetcodeCooldown}=await chrome.storage.local.get('leetcodeCooldown');
@@ -349,6 +365,9 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(sender.id!==chrome.runtime.id || sender.tab && !sender.url?.startsWith(chrome.runtime.getURL('')))return;
   if(message.type==='connect-local-agent'){
     (async()=>{await chrome.storage.local.set({autoConnectDisabled:false});const connection=await agentConnection.autoConnect();return {ok:true,connected:!!connection};})().then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));return true;
+  }
+  if(message.type==='extension-live-report'){
+    (async()=>{const {connection}=await chrome.storage.local.get('connection');await reportHeartbeat(connection,null,true);return {ok:true};})().then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));return true;
   }
   if(message.type==='connection-health'){
     (async()=>{if(message.refresh)await poll();const saved=await chrome.storage.local.get(['connection','lastConnected','lastState','leetcodeSession','autoConnectError','autoConnectDisabled','wakeRecovery']);return {ok:true,checks:connectionHealth(saved),recovery:saved.wakeRecovery||null};})().then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message}));return true;

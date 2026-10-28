@@ -384,3 +384,15 @@ Run Code polls and writes are paced. A saved pending test resumes by its origina
 For a question the AI cannot prepare, three unusable or repeated draft preparation attempts now allow an untouched Easy replacement. Such failures are labelled honestly, separately from three different failed algorithms. Both types count toward the same three-skips-per-account/local-day limit. Successful judge results remain necessary for the entire configured count. Stop/pause, login/account boundaries, contests, spending limits and unknown-submission safeguards remain active.
 
 After updating to **3.3.1**, reload the unpacked extension and refresh existing LeetCode tabs so they use the current content bridge. Chrome must be running and LeetCode/provider access must be available for live work. A powered-off Mac or server outage cannot be bypassed by changing questions.
+
+## 3.3.2 provider recovery and live checks
+
+AI response failures are now typed. Direct Groq requests ask for JSON; solution.code wrappers and code fences are handled, while empty, malformed and truncated code is rejected. A malformed answer is a question-preparation failure, not proof that the provider is offline. If the backup provider also has an outage, the first malformed-answer evidence is retained. After three unusable preparation attempts the automatic runner selects an untouched Easy replacement, subject to the three-skips-per-account/day limit.
+
+Provider cooldown deadlines reach the extension without being reduced to generic errors. Each provider gets at most 45 seconds per generation attempt, and the extension allows 180 seconds for the full fallback request. Spending reservations and accepted-only daily completion remain enforced.
+
+The Today page displays a bounded **extension heartbeat**: installed version, last-seen time, current run/stage, accepted/target, blocker category and retry time. No browser heartbeat means the local server cannot confirm which extension code is loaded. A fresh server version does not prove that Chrome has reloaded its extension.
+
+In the extension dashboard, select **Apply installed extension update** while no run is active. This reloads the already-installed local code, preserving history, Stop/pause, provider keys and submission/skip limits. Reopen the popup and refresh existing LeetCode tabs afterward. The button cannot update an extension loaded from a different folder: confirm chrome://extensions uses this project's extension directory if versions still differ.
+
+**Download live check report** saves only sanitized version/stage/provider status and reserve information. It excludes connection tokens, provider keys, account names, question statements and source code. This report makes the next real failure inspectable instead of relying only on old screenshots or unit-test results.

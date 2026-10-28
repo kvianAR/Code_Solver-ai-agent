@@ -3,7 +3,7 @@ import {localSyntaxCheck} from './runner.mjs';
 export const SERVER_VERSION=JSON.parse(fs.readFileSync(new URL('../extension/manifest.json',import.meta.url))).version;
 export async function diagnostics(store) {
   const c=store.state.config;
-  const labels={working:'connected',key:'key invalid or expired',quota:'quota exhausted',rate:'rate limited',temporary:'temporarily unavailable',request:'check endpoint and model'};
+  const labels={working:'connected',key:'key invalid or expired',quota:'quota exhausted',rate:'rate limited',temporary:'temporarily unavailable',request:'check endpoint and model',output:'model returned invalid or incomplete code'};
   let syntax;
   try{syntax=await localSyntaxCheck(c.language==='python'?'pass':'const value = 1;',c.language,{timeoutSeconds:5});}
   catch(error){syntax={ok:false,feedback:error.message};}

@@ -1,3 +1,4 @@
+import {recordHeartbeat,extensionHealth} from './extension-monitor.mjs';
 import {revisionDeck,answerRevision,weeklyReport} from './practice-insights.mjs';
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -43,8 +44,10 @@ export function createServer(store,platform,agent,options={}) {
         const state=structuredClone(store.publicState());
         state.jobs=state.jobs.map(j=>({...j,tasks:j.tasks.map(t=>({...t,problem:publicProblem(t.problem)}))}));
         state.today=localTime(new Date(),store.state.config.timezone).date;
-        state.serverVersion=SERVER_VERSION;state.apiVersion=1;state.dailyProtection=dailyProtection(store,state.today);state.dailyReadiness=Object.values(store.state.dailyReadiness).sort((a,b)=>b.checkedAt.localeCompare(a.checkedAt))[0]||null;
+        state.serverVersion=SERVER_VERSION;state.apiVersion=1;state.extensionHealth=extensionHealth(store,SERVER_VERSION);state.dailyProtection=dailyProtection(store,state.today);state.dailyReadiness=Object.values(store.state.dailyReadiness).sort((a,b)=>b.checkedAt.localeCompare(a.checkedAt))[0]||null;
         send(200,state);
+      }else if(route==='POST /api/extension/heartbeat'){
+        send(200,recordHeartbeat(store,await body(req,5000)));
       }else if(route==='GET /api/readiness'){
         const today=localTime(new Date(),store.state.config.timezone).date,tomorrow=new Date(Date.parse(today+'T00:00:00Z')+86400000).toISOString().slice(0,10),date=url.searchParams.get('date')||today;
         if(![today,tomorrow].includes(date))throw Error('Readiness checks cover today or the next local day');
@@ -159,7 +162,7 @@ export function createServer(store,platform,agent,options={}) {
         if(learning&&input.interviewId){hintTicket=reserveInterviewHint(store,input.interviewId,input.username,input.stage);input.problem=hintTicket.row.problem;input.sessionId='interview:'+hintTicket.row.id;}
         if(learning&&!['hint','approach','review','solution','compare'].includes(input.stage))throw Error('Choose a learning stage');
         if(learning&&['review','compare'].includes(input.stage)&&(typeof input.code!=='string'||!input.code.trim()||input.code.length>60000))throw Error('Paste your code to review');
-        let lastError;
+        let lastError,outputError;
         const providers=generationProviders(c,input.avoidProvider);
         for(const provider of providers) {
           if(!providerAvailable(store,provider))continue;
@@ -167,10 +170,10 @@ export function createServer(store,platform,agent,options={}) {
           const date=localTime(new Date(),c.timezone).date;
           let reservation;try{reservation=reserveUsage(store,date,provider,input.sessionId,prompt,c.maxOutputTokens,{priority:!learning&&(input.automatic||String(input.sessionId||'').startsWith('automatic:'))?'daily':'optional'});}catch(error){if(provider!=='local'&&providers.includes('local')&&/cost|prices/i.test(error.message)){lastError=error;continue;}throw error;}
           try {
-            const result=await agent.complete(provider,store.secret(provider),providerModel(c,provider),prompt,c);
+            const result=await agent.complete(provider,store.secret(provider),providerModel(c,provider),prompt,{...c,requestTimeoutSeconds:Math.min(c.requestTimeoutSeconds,45)});
             const usage=reservation.settle(result);
             let solution;
-            if(learning&&input.stage!=='solution'){let value;try{value=JSON.parse(result.text.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''));}catch{throw new ProviderError('Provider returned invalid learning JSON');}if(typeof value.text!=='string'||value.text.length>30000)throw new ProviderError('Provider returned invalid learning guidance');let feedback;if(interviewFeedback){try{feedback=parseInterviewFeedback(value);}catch{throw new ProviderError('Provider returned invalid interview rubric');}}solution={text:value.text,...(interviewFeedback?{feedback}:{})};}
+            if(learning&&input.stage!=='solution'){let value;try{value=JSON.parse(result.text.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''));}catch{throw new ProviderError('Provider returned invalid learning JSON','output');}if(typeof value.text!=='string'||value.text.length>30000)throw new ProviderError('Provider returned invalid learning guidance','output');let feedback;if(interviewFeedback){try{feedback=parseInterviewFeedback(value);}catch{throw new ProviderError('Provider returned invalid interview rubric','output');}}solution={text:value.text,...(interviewFeedback?{feedback}:{})};}
             else solution=decodeSolution(result.text);
             store.state.providerActivity={provider,fallbackFrom:provider!==providers[0]?providers[0]:null,at:new Date().toISOString()};
             if(hintTicket){if(hintTicket.row.status!=='active'||Date.now()>=Date.parse(hintTicket.row.deadline))throw Error('Interview ended before the hint was ready');hintTicket.finished=true;}
@@ -178,16 +181,19 @@ export function createServer(store,platform,agent,options={}) {
             recordAssistance(store,date,input.username,input.problem,learning?input.stage:'solution');
             delete store.state.providerCooldowns[provider];store.providerResult(provider,'working');send(200,{...solution,provider,language:c.language,usage,...(learning?{stage:input.stage}:{})});return;
           }catch(e) {
-            lastError=e;
+            lastError=e;if(e.kind==='output')outputError=e;
             if(e.kind)store.providerResult(provider,e.kind,e.message);cooldown(store,provider,e);
             if(['key','quota','request'].includes(e.kind)) {
               store.state.disabledProviders[provider]={reason:e.message,kind:e.kind,since:new Date().toISOString()};
               agent.notify(`${provider} API needs attention`,e.message+(agent.chooseProvider()?' — trying the configured backup.':' — reconnect a key to resume.'),'error','leetcode');store.save();continue;
             }
-            if(['temporary','rate'].includes(e.kind))continue;
+            if(['temporary','rate','output'].includes(e.kind))continue;
             throw e;
           }
         }
+        if(outputError&&providers.some(p=>providerAvailable(store,p)))throw outputError;
+        const nextReady=providers.filter(p=>!store.state.disabledProviders?.[p]).map(p=>Date.parse(store.state.providerCooldowns?.[p]?.until||'')).filter(t=>t>Date.now()).sort((a,b)=>a-b)[0];
+        if(nextReady&&(!lastError||['temporary','rate'].includes(lastError.kind))){const error=lastError||new ProviderError('Configured providers are cooling down','temporary');error.retryAt=new Date(nextReady).toISOString();throw error;}
         throw lastError||Error('No provider is ready. Check local model settings, keys and provider cooldowns.');
       }else if(route==='POST /api/leetcode/verify') {
         const input=await body(req),c=store.state.config;
@@ -216,6 +222,6 @@ export function createServer(store,platform,agent,options={}) {
         const {id}=await body(req);if(agent.running.has('contest:'+id))throw Error('Cannot delete a running contest');
         store.state.contests=store.state.contests.filter(c=>c.id!==id);store.save();await buildPlan(store,platform,localTime(new Date(),store.state.config.timezone).date);send(200,{ok:true});
       }else send(404,{error:'Not found'});
-    }catch(e){releaseInterviewHint(store,hintTicket);if(url.pathname==='/api/provider-test')agent.notify('API connection failed',e.message,'error');send(400,{error:e.message});}
+    }catch(e){releaseInterviewHint(store,hintTicket);if(url.pathname==='/api/provider-test')agent.notify('API connection failed',e.message,'error');send(['temporary','rate'].includes(e.kind)?503:400,{error:e.message,...(e.kind?{kind:e.kind}:{}),...(['temporary','rate'].includes(e.kind)?{retryAt:e.retryAt||new Date(Date.now()+Math.max(e.retryAfter||0,store.state.config.providerCooldownSeconds||120)*1000).toISOString()}:{} )});}
   });
 }

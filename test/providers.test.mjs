@@ -63,3 +63,20 @@ test('generated boundary inputs are bounded and never treated as expected answer
   const result=decodeSolution(JSON.stringify({code:'pass',testCases:[{input:'[1]\n0',expected:'untrusted',reason:'small'},...Array.from({length:8},()=>({input:'x'.repeat(5000)}))]}));
   assert.equal(result.testCases.length,1);assert.equal(result.testCases[0].expected,undefined);
 });
+
+test('solution decoding accepts a bounded solution wrapper and code fences but rejects malformed shapes as output failures',async()=>{
+ const {decodeSolution}=await import('../server/providers.mjs');
+ assert.equal(decodeSolution(JSON.stringify({solution:{code:'```python\nclass Solution: pass\n```',approach:'hash-map'}})).code,'class Solution: pass');
+ for(const text of ['null','[]','{"code":42}','{"explanation":"missing code"}','not json'])assert.throws(()=>decodeSolution(text),e=>e.kind==='output');
+});
+test('direct Groq requests demand JSON and a token-truncated response cannot become a solution',async()=>{
+ const original=globalThis.fetch;
+ try{globalThis.fetch=async(_url,request)=>{assert.equal(JSON.parse(request.body).response_format.type,'json_object');return new Response(JSON.stringify({choices:[{finish_reason:'length',message:{content:'{"code":"unfinished'}}]}));};
+ await assert.rejects(complete('groq','test','example-model','Return JSON',config),error=>error.kind==='output'&&/truncated/.test(error.message));
+ }finally{globalThis.fetch=original;}
+});
+test('provider retry deadlines accept HTTP dates and are not shortened to five minutes',async()=>{
+ const original=globalThis.fetch,deadline=new Date(Date.now()+10*60000).toUTCString();
+ try{globalThis.fetch=async()=>new Response('temporarily unavailable',{status:503,headers:{'retry-after':deadline}});await assert.rejects(requestJSON('https://provider.example'),error=>error.kind==='temporary'&&error.retryAfter>=598);
+ }finally{globalThis.fetch=original;}
+});

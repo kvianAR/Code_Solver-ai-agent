@@ -18,6 +18,9 @@
   function render(){
     if(!state)return;
     $('#health-reconnect').disabled=!extension;
+    $('#apply-installed-update').disabled=!extension;
+    const profiles=state.extensionHealth||[],latest=[...profiles].sort((a,b)=>b.seenAt.localeCompare(a.seenAt))[0];
+    $('#installed-version-health').textContent=extension?`Installed extension ${chrome.runtime.getManifest().version} · Server ${state.serverVersion}. ${chrome.runtime.getManifest().version===state.serverVersion?'Versions match.':'Apply the installed update while no run is active.'}`:latest?`Last extension heartbeat: ${latest.version} · ${latest.fresh?'recent':'stale'} · ${latest.versionMatches?'version matches':'update required'} · ${latest.accepted}/${latest.target} accepted · ${latest.status} · ${latest.reason}.`:'No extension heartbeat received yet. Reload the installed extension; a server update alone does not reload Chrome.';
     for(const id of ['#revision-account','#weekly-account'])if(!$(id).value&&leetcodeAccount)$(id).value=leetcodeAccount;
     if(page==='today')health().catch(e=>toast(e.message));
   }
@@ -26,6 +29,16 @@
   $('#health-reconnect').addEventListener('click',async()=>{
     const button=$('#health-reconnect');button.disabled=true;
     try{const result=await chrome.runtime.sendMessage({type:'connect-local-agent'});if(!result?.ok||!result.connected)throw Error(result?.error||'Start Practice Ex. on this Mac first');connection=await loadConnection();await health(true);await refresh();toast('Agent reconnected; daily safety checks remain active.');}catch(e){toast(e.message);}finally{button.disabled=!extension;}
+  });
+  $('#apply-installed-update').addEventListener('click',async()=>{
+    try{const status=await chrome.runtime.sendMessage({type:'leetcode-run-status'});if(!status?.ok)throw Error('Extension background is unavailable. Reload Practice Ex. in chrome://extensions.');if(status.activeId)throw Error('Finish or Stop the active run before applying an update. Saved history and daily limits are preserved.');toast('Applying installed extension code. Reopen the popup, then refresh existing LeetCode tabs.');setTimeout(()=>chrome.runtime.reload(),400);}catch(e){toast(e.message);}
+  });
+  $('#live-report-download').addEventListener('click',async()=>{
+    try{
+      if(extension){await chrome.runtime.sendMessage({type:'extension-live-report'}).catch(()=>{});}
+      const latest=await api('state'),value={version:latest.serverVersion,createdAt:new Date().toISOString(),extensionHealth:latest.extensionHealth||[],providers:Object.fromEntries(Object.entries(latest.providers||{}).map(([name,row])=>[name,{configured:row.configured,status:latest.providerHealth?.[name]?.status||'untested',checkedAt:latest.providerHealth?.[name]?.checkedAt||null,retryAt:latest.providerCooldowns?.[name]?.until||null}])),dailyReserve:latest.dailyProtection};
+      const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:'application/json'})),link=document.createElement('a');link.href=url;link.download=`practice-ex-live-check-${latest.today}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }catch(e){toast(e.message);}
   });
   $('#revision-load').addEventListener('click',async()=>{
     try{

@@ -318,3 +318,32 @@ test('personal revision and weekly endpoints are authenticated, isolated and mak
   const report=await fetch(url+'/api/study/weekly?username=Student',{headers}).then(r=>r.json());assert.equal(report.days.length,7);assert.equal(report.days.at(-1).quizCorrect,1);assert.equal(report.days.at(-1).accepted,null);
   assert.deepEqual(store.state.usage,{});
 });
+
+test('malformed Groq output plus unavailable backup replaces the stuck question and completes two Easy acceptances',async t=>{
+ const {LeetCodeRunner}=await import('../extension/leetcode-runner.js');
+ let badCalls=0;const {store,platform,agent}=fixture(t,{complete:async(provider,_key,_model,prompt)=>{
+  if(provider==='gemini')throw new ProviderError('Provider temporarily unavailable','temporary',120);
+  if(prompt.includes('Trapping Rain Water')){badCalls++;return {text:JSON.stringify({explanation:'missing code'}),tokens:20};}
+  return {text:JSON.stringify({code:'class Solution:\n    def solve(self, n):\n        return n',explanation:'Identity',approach:'identity'}),tokens:50};
+ }});
+ store.state.config.leetcode.enabled=true;store.state.config.autoMode=true;store.state.config.dailyQuestionCount=2;store.state.config.dailyStartTime='00:00';store.setSecret('groq','fake-groq');store.setSecret('gemini','fake-gemini');
+ const server=createServer(store,platform,agent);await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+ const url='http://127.0.0.1:'+server.address().port,headers={Authorization:'Bearer '+store.state.adminToken,'Content-Type':'application/json'},runs={};let discovered=0,submitted=0;
+ const make=(slug,title,selection)=>({titleSlug:slug,title,selection,difficulty:'Easy',statement:'Return n',starterCode:'class Solution:\n    def solve(self, n):\n        pass'});
+ const runner=new LeetCodeRunner({now:()=>new Date('2026-10-28T09:00:00Z'),uuid:()=>'',load:async()=>structuredClone(runs),save:async run=>{runs[run.id]=structuredClone(run);},session:async()=> 'Student',notify:async()=>{},discover:async()=>({username:'Student',questions:++discovered===1?[make('trapping','Trapping Rain Water','QOTD'),make('second','Second Easy','RANDOM')]:[make('replacement','Replacement Easy','RANDOM')]}),solve:async(problem,feedback,_signal,avoidProvider,sessionId,context)=>{
+  const response=await fetch(url+'/api/leetcode/solve',{method:'POST',headers,body:JSON.stringify({problem,feedback,avoidProvider,sessionId,username:'Student',automatic:true,attemptPlan:context.attemptPlan})});const value=await response.json();if(!response.ok)throw Object.assign(Error(value.error),{kind:value.kind,retryAt:value.retryAt});return value;
+ },verify:async()=>({ok:true}),preflight:async()=>({ok:true}),submit:async()=>({accepted:true,submissionId:String(++submitted)})});
+ runner.start(store.state.config,false,2,'Student');await runner.done;const result=Object.values(runs)[0];
+ assert.equal(result.status,'completed');assert.equal(submitted,2);assert.equal(badCalls,3);assert.equal(result.skipCount,1);assert.equal(result.tasks[0].skipReason,'draft-preparation-failed');assert.equal(result.tasks.filter(r=>r.status==='accepted').length,2);
+});
+test('provider cooldown metadata reaches clients and authenticated heartbeat exposes version mismatch',async t=>{
+ const {store,platform,agent}=fixture(t);store.state.config.leetcode.enabled=true;store.setSecret('groq','fake');
+ const until=new Date(Date.now()+240000).toISOString();store.state.providerCooldowns.groq={until,kind:'temporary'};
+ const server=createServer(store,platform,agent);await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+ const url='http://127.0.0.1:'+server.address().port,headers={Authorization:'Bearer '+store.state.adminToken,'Content-Type':'application/json'};
+ const response=await fetch(url+'/api/leetcode/solve',{method:'POST',headers,body:JSON.stringify({problem:{title:'Example',statement:'Return n',starterCode:'class Solution: pass'}})});const failure=await response.json();
+ assert.equal(response.status,503);assert.equal(failure.kind,'temporary');assert.equal(failure.retryAt,until);
+ assert.equal((await fetch(url+'/api/extension/heartbeat',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,401);
+ assert.equal((await fetch(url+'/api/extension/heartbeat',{method:'POST',headers,body:JSON.stringify({instanceId:'fixture-profile',version:'0.0.1',status:'idle',stage:'idle',accepted:0,target:2,reason:'none'})})).status,200);
+ const state=await fetch(url+'/api/state',{headers}).then(r=>r.json());assert.equal(state.extensionHealth[0].versionMatches,false);assert.equal(state.extensionHealth[0].fresh,true);
+});
