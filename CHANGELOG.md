@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.3.4 — Retry QOTD after repairing a truncated provider response
+
+- An explicit Retry today after increasing the output budget grants one new three-attempt QOTD preparation window for truncation failures. Retain cumulative preparation failures, failed algorithms, judged submission counts, daily skips and account history. The same output limit cannot repeatedly reopen the window.
+- Record the output limit used for each draft preparation and carry repair allowances across archived retry runs. Genuine three-approach failures remain paused for repair.
+- A larger output allowance cannot restore an exhausted primary-provider quota or bypass a backup provider cooldown.
+
+
 ## 3.3.3 — Preserve required QOTD and correct false skips
 
 - Classify solution-generation failures using the server error kind before inspecting message text. Temporary and rate-limit failures now retry without consuming draft preparation or question skip allowances. Key, quota and provider request failures pause for provider repair.

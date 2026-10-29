@@ -1,6 +1,6 @@
 {
   "name": "leetcode-ai-agent",
-  "version": "3.3.3",
+  "version": "3.3.4",
   "private": true,
   "type": "module",
   "engines": {

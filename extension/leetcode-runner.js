@@ -1,4 +1,16 @@
 import {retryTime,temporaryFailure} from './retry-policy.js';
+// A user-requested retry after increasing the output budget opens one new
+// preparation window. Keep cumulative failures and all judged submission limits.
+export function repairQotdPreparation(run,config){
+  if(run?.reviewReason!=='qotd-needs-repair')return false;
+  const task=run.tasks?.find(t=>t.problem?.selection==='QOTD'&&t.status==='blocked');
+  const limit=Number(config.maxOutputTokens)||0;
+  if(!task||!/truncat/i.test(task.feedback||'')||failedApproaches(task).length>=APPROACH_LIMIT||limit<8192||limit<=Math.max(task.preparationOutputLimit||0,task.preparationRepairOutputLimit||0))return false;
+  task.preparationLimit=(task.preparationFailures||0)+APPROACH_LIMIT;
+  task.preparationRepairOutputLimit=limit;
+  task.preparationRepair={reason:'increased-output-budget',outputLimit:limit,previousFailures:task.preparationFailures||0};
+  return true;
+}
 export function unresolvedSubmission(runs,username,titleSlug){
   const rows=Object.values(runs).filter(run=>run.username?.toLowerCase()===username?.toLowerCase()).flatMap(run=>(run.tasks||[]).filter(task=>task.problem?.titleSlug===titleSlug).map(task=>({task,date:run.date})));
   const keys=(record,date)=>[record.submissionId?'id:'+record.submissionId:'',record.fingerprint&&record.at?`${date}:${record.at}:${record.fingerprint}`:''].filter(Boolean);
@@ -258,7 +270,7 @@ export class LeetCodeRunner {
           const prior=problem.selection==='QOTD'&&problem.alreadyAcceptedToday?accountRuns.flatMap(r=>r.date===clock.date?r.tasks||[]:[]).find(t=>t.status==='accepted'&&t.problem?.titleSlug===problem.titleSlug):null;
           const previousTasks=priorTasksFor(problem.titleSlug),previous=previousTasks.at(-1);
           const cached=previous?.solution&&previous.verification?.ok&&!previousTasks.some(t=>(t.submittedCodeFingerprints||[]).includes(codeFingerprint(previous.solution.code)))&&['review','retrying','waiting','blocked','interrupted','stopped'].includes(previous.status);
-          run.tasks.push(prior?{...structuredClone(prior),problem,status:'accepted'}:{problem,status:'pending',attempts:0,approachHistory:approachHistory(previousTasks),preparationFailures:Math.max(0,...previousTasks.map(t=>t.preparationFailures||0)),preflightCheckpoint:cached?previous.preflightCheckpoint:null,feedback:previous?.feedback?`Previous attempt: ${previous.feedback}${previous.solution?.code?'\nPrevious draft:\n'+previous.solution.code.slice(0,3000):''}`:'',previousProvider:previous?.provider,cachedDraft:cached?{...previous.solution,provider:previous.provider}:null});
+          run.tasks.push(prior?{...structuredClone(prior),problem,status:'accepted'}:{problem,status:'pending',attempts:0,approachHistory:approachHistory(previousTasks),preparationFailures:Math.max(0,...previousTasks.map(t=>t.preparationFailures||0)),preparationLimit:Math.max(APPROACH_LIMIT,...previousTasks.map(t=>t.preparationLimit||0)),preparationRepairOutputLimit:Math.max(0,...previousTasks.map(t=>t.preparationRepairOutputLimit||0)),preflightCheckpoint:cached?previous.preflightCheckpoint:null,feedback:previous?.feedback?`Previous attempt: ${previous.feedback}${previous.solution?.code?'\nPrevious draft:\n'+previous.solution.code.slice(0,3000):''}`:'',previousProvider:previous?.provider,cachedDraft:cached?{...previous.solution,provider:previous.provider}:null});
         }
         if (!fresh.length) return false;
         await this.io.save(run);
@@ -295,7 +307,7 @@ export class LeetCodeRunner {
         task.submittedCodeFingerprints ||= [];
         while (task.status !== 'accepted' && task.attempts < (manual?config.maxAttempts:Math.max(3,config.maxAttempts))) {
           if (active.stop) return await this.finishStopped(run);
-          if(!manual&&(failedApproaches(task).length>=APPROACH_LIMIT||(task.preparationFailures||0)>=APPROACH_LIMIT))break;
+          if(!manual&&(failedApproaches(task).length>=APPROACH_LIMIT||(task.preparationFailures||0)>=(task.preparationLimit||APPROACH_LIMIT)))break;
           if(!reviewTask&&priorSubmissions+task.submissionAttempts>=DAILY_SUBMISSION_LIMIT){
             task.status='failed';task.feedback=`Submission safety limit (${DAILY_SUBMISSION_LIMIT} per question per day) reached. Review the solution before another submission.`;
             run.reviewRequired=true;break;
@@ -307,6 +319,7 @@ export class LeetCodeRunner {
           await this.io.save(run);
           if (active.stop) return await this.finishStopped(run);
           let solution;
+          task.preparationOutputLimit=config.maxOutputTokens;
           try {
             const rejectedCode=task.submittedCodeFingerprints.length?task.solution?.code:'';
             const feedback=rejectedCode?`${task.feedback}\nPreviously rejected code (do not repeat):\n${rejectedCode.slice(0,3000)}`:task.feedback;
@@ -337,7 +350,7 @@ export class LeetCodeRunner {
             task.feedback='Choose a genuinely different algorithm, name it in approach, and change the code. Previously failed approaches: '+failedApproaches(task).map(r=>r.approach).join(', ');
             task.repeatedApproaches=(task.repeatedApproaches||0)+1;task.status='pending';await this.io.save(run);
             task.preparationFailures=(task.preparationFailures||0)+1;await this.io.save(run);
-            if(task.preparationFailures>=3){task.feedback='Three draft preparation attempts could not produce a distinct usable approach. Selecting an Easy replacement.';break;}continue;
+            if(task.preparationFailures>=(task.preparationLimit||APPROACH_LIMIT)){task.feedback=task.problem.selection==='QOTD'?'Draft preparation could not produce a distinct usable approach. QOTD remains required.':'Three draft preparation attempts could not produce a distinct usable approach. Selecting an Easy replacement.';break;}continue;
           }
           let attempt=task.approachHistory.find(row=>row.fingerprint===draftFingerprint);
           if(!attempt){attempt={approach,fingerprint:draftFingerprint,status:'prepared',at:this.io.now().toISOString()};task.approachHistory.push(attempt);}
@@ -413,7 +426,7 @@ export class LeetCodeRunner {
             break;
           }
         }
-        if(!manual&&task.status!=='accepted'&&(failedApproaches(task).length>=APPROACH_LIMIT||(task.preparationFailures||0)>=APPROACH_LIMIT)){
+        if(!manual&&task.status!=='accepted'&&(failedApproaches(task).length>=APPROACH_LIMIT||(task.preparationFailures||0)>=(task.preparationLimit||APPROACH_LIMIT))){
           if(task.problem.selection==='QOTD'){
             task.status='blocked';delete task.skipReason;run.qotdDisposition='';
             run.reviewRequired=true;run.reviewReason='qotd-needs-repair';

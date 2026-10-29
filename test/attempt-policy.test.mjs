@@ -112,3 +112,16 @@ test('required QOTD never skips or gets replaced after three failed approaches',
 test('legacy skipped QOTD is not a completion exemption',()=>{
  for(const disposition of ['three-approaches-failed','draft-preparation-failed'])assert.equal(qotdSatisfied({qotdDisposition:disposition,tasks:[]}),false);
 });
+
+test('larger output budget permits one explicit QOTD preparation repair and retains total failure history',async()=>{
+ const {repairQotdPreparation}=await import('../extension/leetcode-runner.js');
+ const run={reviewReason:'qotd-needs-repair',tasks:[{problem:q('qotd','QOTD'),status:'blocked',feedback:'Provider response was truncated',preparationFailures:3,preparationOutputLimit:4096,submissionAttempts:1,approachHistory:[]}]};
+ assert.equal(repairQotdPreparation(run,{maxOutputTokens:4096}),false);
+ assert.equal(repairQotdPreparation(run,{maxOutputTokens:16384}),true);
+ assert.equal(run.tasks[0].preparationFailures,3);assert.equal(run.tasks[0].preparationLimit,6);assert.equal(run.tasks[0].submissionAttempts,1);
+ assert.equal(repairQotdPreparation(run,{maxOutputTokens:16384}),false);
+ const initial={old:{...run,id:'old',date,mode:'automatic',username}};
+ const f=fixture({initial});f.runner.start({...config,maxOutputTokens:16384},false,2,username);await f.runner.done;
+ const current=Object.values(f.runs).find(r=>r.id!=='old');assert.equal(current.status,'completed');
+ assert.equal(current.tasks[0].preparationFailures,3);assert.equal(current.tasks[0].preparationLimit,6);
+});

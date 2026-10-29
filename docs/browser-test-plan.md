@@ -66,3 +66,8 @@ The automation available in this chat cannot open `chrome-extension://` pages. R
 - Return a typed temporary provider error with message "Provider returned invalid JSON". Confirm automatic retry at the supplied deadline, zero preparation failures, zero skips and queued remaining work.
 - Fail QOTD three times. Confirm no Easy replacement, no skipped QOTD and no completion exemption. Preserve the last concrete failure and notify for repair. Submission limits still apply.
 - Reload an old run with a historical QOTD skip. Confirm that disposition does not satisfy QOTD or reset historical daily counters.
+
+## 3.3.4 output-budget repair
+
+- Exhaust QOTD preparation on truncated outputs at 4096 tokens. Increase the configured output limit to 16384 and explicitly retry today. Confirm a fresh preparation window while cumulative failures remain three, with unchanged submission and daily skip history.
+- Retry again at the same output limit. Confirm it cannot create another preparation allowance. Never reopen the window for three genuine failed approaches or unknown submission results.
