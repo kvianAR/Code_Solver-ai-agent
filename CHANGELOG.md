@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.3.3 — Preserve required QOTD and correct false skips
+
+- Classify solution-generation failures using the server error kind before inspecting message text. Temporary and rate-limit failures now retry without consuming draft preparation or question skip allowances. Key, quota and provider request failures pause for provider repair.
+- Keep genuine invalid model output eligible for the three-preparation-attempt replacement rule even when its message contains network words. Preserve daily skip history and submission limits.
+- QOTD now stays required after failed approaches or unusable preparation. Never skip or replace it; notify for repair and preserve submission limits. Historical skipped-QOTD dispositions no longer count as completion exemptions. Other questions retain the three-failure Easy replacement rule.
+- Add regression coverage for typed service failures, retry deadlines, queued questions, required QOTD and ordinary-question replacement.
+
+
 ## 3.3.2 — Provider output recovery and installed-version visibility
 
 - Request JSON output from the direct Groq endpoint, recognize a bounded solution.code wrapper and strip code-field fences. Reject null/missing/oversized/truncated outputs explicitly as output failures instead of generic temporary outages.

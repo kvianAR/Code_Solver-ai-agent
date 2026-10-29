@@ -75,10 +75,10 @@ test('a repeated unnamed QOTD draft is replaced after bounded preparation failur
   const {runner,runs,calls}=fixture({preflight:async()=>({ok:false,feedback:'Wrong Answer'})});
   runner.start(config,false,2,'Leetcoder071');await runner.done;
   const run=runs[`automatic:${date}:leetcoder071`];
-  assert.equal(run.status,'failed');
+  assert.equal(run.status,'blocked');
   assert.equal(run.tasks[0].attempts,4);
-  assert.equal(run.tasks[0].status,'skipped');
-  assert.equal(run.tasks[0].skipReason,'draft-preparation-failed');
+  assert.equal(run.tasks[0].status,'blocked');
+  assert.equal(run.tasks[0].skipReason,undefined);
   assert.equal(run.tasks[1].status,'queued');
   assert.equal(calls.submitted.length,0);
 });
@@ -408,7 +408,7 @@ test('identical regenerated code is not submitted twice',async()=>{
   runner.start({...config,dailyQuestionCount:1},false,1,'Leetcoder071');await runner.done;
   assert.equal(calls.submitted.length,1);
   const run=runs[`automatic:${date}:leetcoder071`];
-  assert.equal(run.status,'failed');assert.equal(run.skipCount,1);assert.equal(run.tasks[0].skipReason,'draft-preparation-failed');
+  assert.equal(run.status,'blocked');assert.equal(run.skipCount,0);assert.equal(run.tasks[0].skipReason,undefined);
   assert.equal(run.tasks[0].submissionAttempts,1);
 });
 
@@ -511,7 +511,7 @@ test('an old automatic QOTD review draft is resumable rather than treated as fin
 test('automatic QOTD still respects judged limits when review is enabled',async()=>{
   let draft=0;const {runner,runs,calls}=fixture({solve:async()=>({code:'draft '+(++draft),provider:'groq',approach:'algorithm-'+draft}),submit:async problem=>{calls.submitted.push(problem.titleSlug);return {accepted:false,submissionId:String(draft),feedback:'Wrong Answer'};}});
   runner.start({...config,reviewBeforeSubmit:true},false,2,'Leetcoder071');await runner.done;
-  const run=Object.values(runs)[0];assert.equal(calls.submitted.length,3);assert.equal(run.tasks[0].status,'skipped');assert.notEqual(run.status,'completed');
+  const run=Object.values(runs)[0];assert.equal(calls.submitted.length,3);assert.equal(run.tasks[0].status,'blocked');assert.equal(run.reviewReason,'qotd-needs-repair');assert.notEqual(run.status,'completed');
 });
 
 test('raising a completed daily allotment resumes only the additional question today',async()=>{

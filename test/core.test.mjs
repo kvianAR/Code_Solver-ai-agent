@@ -319,7 +319,7 @@ test('personal revision and weekly endpoints are authenticated, isolated and mak
   assert.deepEqual(store.state.usage,{});
 });
 
-test('malformed Groq output plus unavailable backup replaces the stuck question and completes two Easy acceptances',async t=>{
+test('malformed Groq output plus unavailable backup keeps QOTD required without replacement',async t=>{
  const {LeetCodeRunner}=await import('../extension/leetcode-runner.js');
  let badCalls=0;const {store,platform,agent}=fixture(t,{complete:async(provider,_key,_model,prompt)=>{
   if(provider==='gemini')throw new ProviderError('Provider temporarily unavailable','temporary',120);
@@ -334,7 +334,7 @@ test('malformed Groq output plus unavailable backup replaces the stuck question 
   const response=await fetch(url+'/api/leetcode/solve',{method:'POST',headers,body:JSON.stringify({problem,feedback,avoidProvider,sessionId,username:'Student',automatic:true,attemptPlan:context.attemptPlan})});const value=await response.json();if(!response.ok)throw Object.assign(Error(value.error),{kind:value.kind,retryAt:value.retryAt});return value;
  },verify:async()=>({ok:true}),preflight:async()=>({ok:true}),submit:async()=>({accepted:true,submissionId:String(++submitted)})});
  runner.start(store.state.config,false,2,'Student');await runner.done;const result=Object.values(runs)[0];
- assert.equal(result.status,'completed');assert.equal(submitted,2);assert.equal(badCalls,3);assert.equal(result.skipCount,1);assert.equal(result.tasks[0].skipReason,'draft-preparation-failed');assert.equal(result.tasks.filter(r=>r.status==='accepted').length,2);
+ assert.equal(result.status,'blocked');assert.equal(submitted,0);assert.equal(badCalls,3);assert.equal(result.skipCount,0);assert.equal(result.reviewReason,'qotd-needs-repair');assert.equal(result.tasks[0].skipReason,undefined);assert.equal(result.tasks.filter(r=>r.status==='accepted').length,0);
 });
 test('provider cooldown metadata reaches clients and authenticated heartbeat exposes version mismatch',async t=>{
  const {store,platform,agent}=fixture(t);store.state.config.leetcode.enabled=true;store.setSecret('groq','fake');

@@ -22,7 +22,7 @@ const codeFingerprint = code => {
   return `${normalized.length}:${hash>>>0}`;
 };
 export const hasAcceptedQotd = run => (run?.tasks||[]).some(t=>t.problem?.selection==='QOTD'&&t.status==='accepted');
-export const qotdSatisfied=run=>hasAcceptedQotd(run)||['already-accepted','three-approaches-failed','draft-preparation-failed'].includes(run?.qotdDisposition);
+export const qotdSatisfied=run=>hasAcceptedQotd(run)||run?.qotdDisposition==='already-accepted';
 const failedApproaches=task=>(task.approachHistory||[]).filter(row=>row.approach&&row.approach!=='unlabelled'&&['syntax-failed','test-failed','rejected'].includes(row.status));
 function approachHistory(tasks){
   const records=new Map();for(const task of tasks)for(const row of task.approachHistory||[]){const old=records.get(row.fingerprint);if(!old||row.status!=='prepared')records.set(row.fingerprint,structuredClone(row));}return [...records.values()];
@@ -215,7 +215,7 @@ export class LeetCodeRunner {
         startedAt: this.io.now().toISOString(), username:accountUsername, retryNumber, timezone:config.timezone,
         tasks: manual ? [] : acceptedResume.slice(0,resumeLimit)};
       const previousDaily=accountUsername?Object.values(runs).filter(r=>r.mode==='automatic'&&r.date===clock.date&&r.username?.toLowerCase()===accountUsername.toLowerCase()):[];
-      run.qotdDisposition=previousDaily.find(r=>['already-accepted','three-approaches-failed','draft-preparation-failed'].includes(r.qotdDisposition))?.qotdDisposition||'';
+      run.qotdDisposition=previousDaily.find(r=>r.qotdDisposition==='already-accepted')?.qotdDisposition||'';
       const skipped=skippedDailyQuestions(runs,clock.date,accountUsername);run.skipCount=skipped.size;
       this.currentRun=run;
       await this.io.save(run);
@@ -232,7 +232,7 @@ export class LeetCodeRunner {
       const completedCount = accountRuns.reduce((n, r) =>
         n + (r.tasks || []).filter(t => t.status === 'accepted').length, 0);
       const discoverMore = async (count, preferQuestionOfTheDay, replacement=false) => {
-        const easyOnly=replacement||!manual&&skipped.size>0;
+        const easyOnly=replacement||!manual&&skipped.size>0&&qotdSatisfied(run);
         const requireQotd=!manual&&!qotdSatisfied(run)&&!run.tasks.some(t=>t.problem?.selection==='QOTD');
         const discovered = await this.io.discover({username: accountUsername, count,
           enforceUsername: !!accountUsername, adaptivePractice:!easyOnly&&config.adaptivePractice,timezone:config.timezone,
@@ -247,7 +247,7 @@ export class LeetCodeRunner {
         const fresh = [];
         for (const problem of discovered.questions || []) {
           if (easyOnly&&(problem.difficulty!=='Easy'||problem.status==='ac'))continue;
-          if (!problem?.titleSlug || skipped.has(problem.titleSlug) || run.tasks.some(task => task.problem.titleSlug === problem.titleSlug) ||
+          if (!problem?.titleSlug || (skipped.has(problem.titleSlug)&&problem.selection!=='QOTD') || run.tasks.some(task => task.problem.titleSlug === problem.titleSlug) ||
             fresh.some(item => item.titleSlug === problem.titleSlug)) continue;
           if (requestedSlug !== problem.titleSlug && excludeSlugs.has(problem.titleSlug) &&
             !(problem.selection==='RETRY'&&retrySlugs.includes(problem.titleSlug))&&!(problem.selection==='QOTD'&&(!manual||!acceptedTodaySlugs.has(problem.titleSlug)))&&!(problem.selection==='REVISION'&&!acceptedTodaySlugs.has(problem.titleSlug))) continue;
@@ -319,7 +319,9 @@ export class LeetCodeRunner {
             if (active.stop) return await this.finishStopped(run);
             task.feedback = error.message;
             task.status = 'pending';
-            task.retryKind=/key|quota|budget/.test(error.message)?'provider':/login|session|csrf|account/i.test(error.message)?'login':/rate|429|temporary|unavailable|network|timed out|timeout|connection/i.test(error.message)?'network':'solution';
+            // The server's error kind is authoritative: transport failures can also mention
+            // JSON, while invalid model output can contain words such as "network".
+            task.retryKind=error.kind==='output'?'solution':['key','quota','request'].includes(error.kind)?'provider':temporaryFailure(error)?'network':/key|quota|budget/i.test(error.message)?'provider':/login|session|csrf|account/i.test(error.message)?'login':/rate|429|temporary|unavailable|network|timed out|timeout|connection/i.test(error.message)?'network':'solution';
             if (task.retryKind!=='solution'||/contest.*is live/i.test(error.message)) {
               task.status = task.retryKind==='network'?'retrying':'blocked';
               if(task.status==='retrying')run.nextRetryAt=retryTime(error,this.io.now().getTime());
@@ -412,9 +414,14 @@ export class LeetCodeRunner {
           }
         }
         if(!manual&&task.status!=='accepted'&&(failedApproaches(task).length>=APPROACH_LIMIT||(task.preparationFailures||0)>=APPROACH_LIMIT)){
+          if(task.problem.selection==='QOTD'){
+            task.status='blocked';delete task.skipReason;run.qotdDisposition='';
+            run.reviewRequired=true;run.reviewReason='qotd-needs-repair';
+            task.feedback='QOTD remains required. Three approaches or draft preparation attempts failed; repair is needed before continuing. QOTD will not be skipped or replaced. Last failure: '+task.feedback;
+            await this.io.save(run);break;
+          }
           task.status='skipped';task.skipReason=failedApproaches(task).length>=3?'three-approaches-failed':'draft-preparation-failed';task.feedback=task.skipReason==='three-approaches-failed'?'Three different approaches failed syntax, examples or judging. Replacing with an untouched Easy question.':'Three preparation attempts could not produce a usable distinct draft. Replacing with an untouched Easy question; this is not three different failed algorithms.';
           skipped.add(task.problem.titleSlug);run.skipCount=skipped.size;
-          if(task.problem.selection==='QOTD')run.qotdDisposition=task.skipReason;
           await this.io.save(run);
           if(skipped.size>=DAILY_SKIP_LIMIT){run.reviewRequired=true;run.reviewReason='daily-skip-limit';run.feedback='Three questions were skipped today. Automatic work has stopped; review is needed.';break;}
           const before=run.tasks.length;

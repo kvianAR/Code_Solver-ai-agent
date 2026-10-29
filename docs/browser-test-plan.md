@@ -49,14 +49,20 @@ The automation available in this chat cannot open `chrome-extension://` pages. R
 - Change account/code/problem/inputs or expire the checkpoint. Confirm it is rejected and fresh checks run.
 - Verify explicit submit HTTP 429 does not create an unknown judged result or consume a judged slot. A dropped response after a POST remains unknown and must never replay automatically.
 - Close a message port mid-submission. Confirm only one send; a genuinely missing receiving bridge may be injected before a fresh operation.
-- Repeatedly return the same AI algorithm. Confirm three preparation failures permit Easy replacement, record the actual reason, and do not reset the daily three-skip limit.
+- Repeatedly return the same AI algorithm for a non-QOTD question. Confirm three preparation failures permit Easy replacement, record the actual reason, and do not reset the daily three-skip limit.
 - Confirm the QOTD selection note spans the task grid, cached-draft reuse is labelled, and the popup gives the retry time.
 
 ## 3.3.2 live provider and installed-version checks
 
-- Return malformed solution JSON from the first provider and a temporary outage from the backup. Confirm each unusable preparation is counted and, after three, an untouched Easy replacement can complete the configured accepted count.
+- Return malformed solution JSON from the first provider and a temporary outage from the backup. Confirm each unusable preparation is counted. After three, a non-QOTD question can be replaced with untouched Easy; QOTD remains required and notifies for repair.
 - Confirm JSON wrappers/fences are normalized, truncated outputs are rejected, and malformed output does not disable a provider for unrelated questions.
 - Confirm provider cooldown deadlines survive the server error response and reach the runner as typed retry metadata.
 - Observe a heartbeat after loading this extension. Compare its installed version and freshness with the server. A different local extension folder must show a mismatch instead of implying an update succeeded.
 - Use Apply installed extension update while idle. Confirm Chrome reloads, history/counters remain, and the next heartbeat reports the new version. During an active run the action must refuse to reload.
 - Download the live check report and confirm it contains no keys, tokens, account names, problem statements or code.
+
+## 3.3.3 required QOTD and typed errors
+
+- Return a typed temporary provider error with message "Provider returned invalid JSON". Confirm automatic retry at the supplied deadline, zero preparation failures, zero skips and queued remaining work.
+- Fail QOTD three times. Confirm no Easy replacement, no skipped QOTD and no completion exemption. Preserve the last concrete failure and notify for repair. Submission limits still apply.
+- Reload an old run with a historical QOTD skip. Confirm that disposition does not satisfy QOTD or reset historical daily counters.
