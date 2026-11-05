@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.3.6 — Resume manual batches and reduce question-selection requests
+
+- Resume interrupted manual batches for the same account, local day and requested count. Retain accepted/reviewed tasks, cached unsent drafts, test checkpoints and daily judged limits. Link retry history so completed descendants cannot restart old retries.
+- Schedule manual temporary-failure recovery at its retry deadline, independently of the daily start time. Verify the signed-in account before resuming; preserve Stop, cooldowns and uncertain-result checks.
+- Filter question-list metadata before loading full statements, rather than probing the roadmap one statement at a time. Retain roadmap priority among eligible candidates and existing untouched/Premium/difficulty checks.
+- Label the manual button Solve & submit when review mode is off, and Prepare when review mode is on.
+- Cover two- and five-question submission, five-draft review, interrupted batch recovery, no duplicate acceptance, request counts and scheduled manual recovery. Judge acceptances in these tests are simulated; live browser acceptance requires separate verification.
+
+
 ## 3.3.5 — Retain every daily question and recover syntax-service outages
 
 - Stop creating skipped questions or Easy replacements in automatic daily runs. After three failed approaches or preparation attempts, retain the same question, its concrete failure and all progress for repair. Apply the output-budget repair path to ordinary questions as well as QOTD.

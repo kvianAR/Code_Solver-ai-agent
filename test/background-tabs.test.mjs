@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 import {acceptedDailyTasks,dailyQotdDisposition,deadlineNotice,connectionHealth} from '../extension/daily-recovery.js';
-import {qotdSatisfied,readinessTarget} from '../extension/leetcode-runner.js';
+import {manualRetryRun,qotdSatisfied,readinessTarget} from '../extension/leetcode-runner.js';
 
 const source=readFileSync(new URL('../extension/background.js',import.meta.url),'utf8')
   .replace(/^import .*?;\n/gm,'');
@@ -40,7 +40,7 @@ async function runPoll(due,precheck=false,sessionResponse={ok:true,value:{signed
     async recover(){}
     start(...args){started.push(args);this.done=Promise.resolve();return {started:true,id:'automatic:2026-10-06:testuser'};}
   }
-  runInNewContext(source,{retryTime,bridgeError,qotdSatisfied,acceptedDailyTasks,dailyQotdDisposition,deadlineNotice,connectionHealth,readinessTarget,chrome,LeetCodeRunner:Runner,activeContest:()=>null,contestRefreshDue:()=>false,
+  runInNewContext(source,{retryTime,bridgeError,manualRetryRun,qotdSatisfied,acceptedDailyTasks,dailyQotdDisposition,deadlineNotice,connectionHealth,readinessTarget,chrome,LeetCodeRunner:Runner,activeContest:()=>null,contestRefreshDue:()=>false,
     localClock:()=>({date:'2026-10-06',time:'12:00'}),dailyRunForAccount:()=>null,
     latestArchivedAutomaticRun:()=>null,automaticRetryDecision:()=>({due}),loginPrecheckDue:()=>precheck,
     archiveRetryableAutomaticRun:()=>false,shouldRetryForLaterSchedule:()=>false,
@@ -99,4 +99,10 @@ test('an active LeetCode cooldown suppresses all browser requests and arms an ex
   const until=new Date(Date.now()+120000).toISOString();
   const result=await runPoll(true,false,undefined,{leetcodeCooldown:{until,failures:1}});
   assert.equal(result.started.length,0);assert.equal(result.created.length,0);assert.equal(result.saved.dailyDiagnostic.kind,'retrying');assert.equal(result.saved.dailyDiagnostic.nextRetryAt,until);
+});
+
+test('due manual batches verify login and resume before the daily schedule time',async()=>{
+ const date=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ const f=await runPoll(false,false,{ok:true,value:{signedIn:true,username:'TestUser'}},{leetcodeRuns:{pending:{id:'pending',date,mode:'manual',username:'TestUser',target:5,status:'retrying',nextRetryAt:new Date(Date.now()-60000).toISOString(),tasks:[]}}});
+ assert.equal(f.started.length,1);assert.equal(f.started[0][1],true);assert.equal(f.started[0][2],5);assert.equal(f.started[0][3],'TestUser');
 });

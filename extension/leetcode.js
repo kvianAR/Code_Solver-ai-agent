@@ -93,17 +93,19 @@
       if(!/^[a-z0-9-]+$/.test(slug)||(options.acceptedTodaySlugs||[]).includes(slug)||chosen.some(q=>q.titleSlug===slug))continue;
       const q=await question(slug,options.language);if(q&&!q.paidOnly&&allowed.has(q.difficulty)){q.selection='REVISION';chosen.push(q);seen.add(slug);}
     }
-    const completed=Math.max(0,Number(options.completedCount)||0),start=Math.min(Math.floor(completed/10)*10,Math.max(0,ROADMAP.length-20));
-    if(options.selectionMode!=='random'){
-      const ordered=[...shuffle(ROADMAP.slice(start,start+20)),...shuffle(ROADMAP.slice(0,start)),...shuffle(ROADMAP.slice(start+20))];
-      for(const slug of ordered){if(chosen.length>=options.count)break;if(seen.has(slug))continue;const q=await question(slug,options.language);if(q&&!q.paidOnly&&q.status==null&&allowed.has(q.difficulty)){q.selection='ROADMAP';chosen.push(q);seen.add(slug);}}
-    }
     if(chosen.length<options.count){
+      // Filter solved/Premium/difficulty metadata in one list request before
+      // fetching full statements. Avoid probing the entire roadmap one by one.
       const slugs=await problemsetSlugs(allowed,seen,options.count-chosen.length,options.weakTopics||[]);
+      if(options.selectionMode!=='random'){
+        const completed=Math.max(0,Number(options.completedCount)||0),start=Math.min(Math.floor(completed/10)*10,Math.max(0,ROADMAP.length-20));
+        const order=[...ROADMAP.slice(start),...ROADMAP.slice(0,start)],rank=new Map(order.map((slug,index)=>[slug,index]));
+        slugs.sort((a,b)=>(rank.get(a)??Infinity)-(rank.get(b)??Infinity));
+      }
       for(const slug of slugs){
         if(chosen.length>=options.count)break;
         const q=await question(slug,options.language);
-        if(q&&!seen.has(q.titleSlug)&&!q.paidOnly&&q.status==null&&allowed.has(q.difficulty)){q.selection='RANDOM';chosen.push(q);seen.add(q.titleSlug);}
+        if(q&&!seen.has(q.titleSlug)&&!q.paidOnly&&q.status==null&&allowed.has(q.difficulty)){q.selection=options.selectionMode!=='random'&&ROADMAP.includes(slug)?'ROADMAP':'RANDOM';chosen.push(q);seen.add(q.titleSlug);}
       }
     }
     if(!chosen.length)throw Error('No untouched eligible LeetCode question found');return{username:user.username,questions:chosen,qotdNote,qotdAlreadyAccepted};

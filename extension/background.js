@@ -1,6 +1,6 @@
 import {retryTime,bridgeError} from './retry-policy.js';
 import {acceptedDailyTasks,dailyQotdDisposition,deadlineNotice,connectionHealth} from './daily-recovery.js';
-import {LeetCodeRunner, repairQotdPreparation, qotdSatisfied, archiveRetryableAutomaticRun, automaticRetryDecision, dailyRunForAccount, latestArchivedAutomaticRun, localClock, readinessTarget, loginPrecheckDue, shouldRetryForLaterSchedule} from './leetcode-runner.js';
+import {LeetCodeRunner, manualRetryRun, repairQotdPreparation, qotdSatisfied, archiveRetryableAutomaticRun, automaticRetryDecision, dailyRunForAccount, latestArchivedAutomaticRun, localClock, readinessTarget, loginPrecheckDue, shouldRetryForLaterSchedule} from './leetcode-runner.js';
 import {activeContest,contestRefreshDue} from './contest-calendar.js';
 import './connection.js';
 import './practice-plan.js';
@@ -112,7 +112,7 @@ async function saveRun(run) {
   const {leetcodeRuns={}}=await chrome.storage.local.get('leetcodeRuns');
   leetcodeRuns[run.id || run.date]=run;
   await chrome.storage.local.set({leetcodeRuns});
-  if(run.mode==='automatic'&&run.status==='retrying'&&run.nextRetryAt&&!run.reviewRequired)await chrome.alarms.create('retry-leetcode',{when:Math.max(Date.now()+1000,Date.parse(run.nextRetryAt))});
+  if(run.status==='retrying'&&run.nextRetryAt&&!run.reviewRequired)await chrome.alarms.create(run.mode==='manual'?'retry-manual-leetcode':'retry-leetcode',{when:Math.max(Date.now()+1000,Date.parse(run.nextRetryAt))});
   const {connection:progressConnection}=await chrome.storage.local.get('connection');
   await reportHeartbeat(progressConnection,run).catch(()=>{});
   if(progressConnection&&run.mode==='automatic'&&run.username){const accepted=acceptedDailyTasks(leetcodeRuns,run.date,run.username);try{await serverApi(progressConnection,'leetcode/daily-progress',{date:run.date,username:run.username,accepted:accepted.length,qotdAccepted:accepted.some(t=>t.problem?.selection==='QOTD'),qotdExempt:dailyQotdDisposition(leetcodeRuns,run.date,run.username)});}catch{}}
@@ -251,7 +251,7 @@ async function poll(){
       const existingTabs=(await chrome.tabs.query({url:'https://leetcode.com/*'})).filter(tab=>!tab.discarded);
       const cachedRun=dailyRunForAccount(leetcodeRuns,clock.date,account)||latestArchivedAutomaticRun(leetcodeRuns,clock.date,account);
       const resultDue=Object.values(leetcodeRuns).some(r=>(!account||r.username?.toLowerCase()===account.toLowerCase())&&pendingResultDue(r));
-      const due=state.config.autoMode&&!runner.active&&automaticRetryDecision(cachedRun,state.config).due||resultDue;
+      const due=state.config.autoMode&&!runner.active&&automaticRetryDecision(cachedRun,state.config).due||resultDue||!!manualRetryRun(leetcodeRuns,state.config,account);
       const upcoming=readinessTarget(state.config);
       const precheck=cachedRun?.status!=='completed'&&loginPrecheckDue(state.config,new Date(),lastAgentLoginCheckAt)||upcoming&&upcoming!==clock.date&&Date.now()-lastAgentLoginCheckAt>=10*60000;
       const lastCheck=lastAgentLoginCheckAt?localClock(state.config.timezone,new Date(lastAgentLoginCheckAt)):null;
@@ -288,6 +288,7 @@ async function poll(){
     let diagnostic={kind:'scheduled',message:`Scheduled for ${state.config.dailyStartTime} ${state.config.timezone}.`,updatedAt:new Date().toISOString()};
     if(state.config.leetcode?.enabled){
       handleContests().catch(()=>{});
+      if(accountVerified&&!runner.active){const pending=manualRetryRun(leetcodeRuns,state.config,account);if(pending)startRun(state.config,true,pending.target,account);}
       const scheduleMoved=account&&state.config.autoMode&&shouldRetryForLaterSchedule(live,state.config);
       let movedRetryNumber=1;
       if(scheduleMoved&&!runner.active){
@@ -357,7 +358,7 @@ async function migrateAttemptLabels(){
 async function init(){await chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});await ready;await migrateAttemptLabels();if(!runner.active)await closeAgentLeetCodeTab();await chrome.alarms.create('poll-agent',{periodInMinutes:1});await poll();}
 globalThis.addEventListener?.('online',()=>poll());
 chrome.tabs.onUpdated.addListener((_id,info,tab)=>{if(info.status==='complete'&&tab?.url?.startsWith('https://leetcode.com/'))poll();});
-chrome.runtime.onInstalled.addListener(init);chrome.runtime.onStartup.addListener(init);chrome.alarms.onAlarm.addListener(a=>{if(['poll-agent','retry-leetcode'].includes(a.name))poll();});chrome.notifications.onClicked.addListener(id=>chrome.tabs.create({url:chrome.runtime.getURL(id.startsWith('leetcode-run:')?`dashboard.html#run=${encodeURIComponent(id.slice('leetcode-run:'.length))}`:id.startsWith('contest-')?'dashboard.html#contests':'dashboard.html')}));
+chrome.runtime.onInstalled.addListener(init);chrome.runtime.onStartup.addListener(init);chrome.alarms.onAlarm.addListener(a=>{if(['poll-agent','retry-leetcode','retry-manual-leetcode'].includes(a.name))poll();});chrome.notifications.onClicked.addListener(id=>chrome.tabs.create({url:chrome.runtime.getURL(id.startsWith('leetcode-run:')?`dashboard.html#run=${encodeURIComponent(id.slice('leetcode-run:'.length))}`:id.startsWith('contest-')?'dashboard.html#contests':'dashboard.html')}));
 chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(message.type==='leetcode-submission-started'&&sender.id===chrome.runtime.id&&sender.tab&&/^https:\/\/leetcode\.com\//.test(sender.url||'')){
     runner.recordSubmission(message.slug,message.submissionId,message.username).then(()=>sendResponse({ok:true})).catch(error=>sendResponse({ok:false,error:error.message}));return true;

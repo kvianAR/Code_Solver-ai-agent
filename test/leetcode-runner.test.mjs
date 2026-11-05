@@ -564,3 +564,43 @@ test('recovering the original judge result releases a guard-only blocked daily r
   const {runner,runs}=fixture({result:async()=>({accepted:true,feedback:'Accepted'})},{shadow,original});await runner.recover(true,'Leetcoder071');
   assert.equal(runs.original.tasks[0].status,'accepted');assert.equal(runs.shadow.status,'interrupted');assert.equal(runs.shadow.reviewRequired,undefined);
 });
+
+test('manual solve and submit completes the requested two or five questions',async()=>{
+ for(const count of [2,5]){
+  const {runner,runs,calls}=fixture();runner.start({...config,reviewBeforeSubmit:false},true,count,'Leetcoder071');await runner.done;
+  const run=Object.values(runs)[0];assert.equal(run.status,'completed');assert.equal(run.target,count);
+  assert.equal(run.tasks.filter(t=>t.status==='accepted').length,count);assert.equal(calls.submitted.length,count);
+ }
+});
+test('manual interrupted batch resumes its saved draft and remaining questions without repeating acceptance',async()=>{
+ let checks=0;const f=fixture({preflight:async()=>{if(++checks===2)throw Object.assign(Error('Run Code unavailable'),{kind:'temporary',retryAt:'2026-09-29T06:01:00.000Z'});return {ok:true};}});
+ f.runner.start({...config,reviewBeforeSubmit:false},true,5,'Leetcoder071');await f.runner.done;
+ const first=Object.values(f.runs)[0];assert.equal(first.status,'retrying');assert.equal(f.calls.submitted.length,1);assert.equal(first.tasks.length,5);
+ f.runner.start({...config,reviewBeforeSubmit:false},true,5,'Leetcoder071');await f.runner.done;
+ const resumed=Object.values(f.runs).find(r=>r.id!==first.id);assert.equal(resumed.status,'completed');assert.equal(resumed.resumedFrom,first.id);
+ assert.equal(f.calls.submitted.length,5);assert.equal(new Set(f.calls.submitted).size,5);assert.equal(f.calls.discovered.length,1);
+ assert.equal(f.calls.solved,5);assert.equal(resumed.tasks.filter(t=>t.status==='accepted').length,5);
+});
+test('manual review mode still prepares all five drafts without submitting',async()=>{
+ const f=fixture();f.runner.start({...config,reviewBeforeSubmit:true},true,5,'Leetcoder071');await f.runner.done;
+ const run=Object.values(f.runs)[0];assert.equal(run.status,'review');assert.equal(run.tasks.filter(t=>t.status==='review').length,5);assert.equal(f.calls.submitted.length,0);
+});
+
+test('manual retry selection honors cooldown, account, Stop, and completed descendant',async()=>{
+ const {manualRetryRun}=await import('../extension/leetcode-runner.js');
+ const retry={id:'manual-old',mode:'manual',date,username:'Leetcoder071',status:'retrying',target:5,nextRetryAt:'2026-09-29T06:01:00.000Z'};
+ const now=new Date('2026-09-29T06:02:00Z');
+ assert.equal(manualRetryRun({old:retry},config,'Leetcoder071',new Date('2026-09-29T06:00:00Z')),null);
+ assert.equal(manualRetryRun({old:retry},config,'Other',now),null);
+ assert.equal(manualRetryRun({old:{...retry,status:'stopped'}},config,'Leetcoder071',now),null);
+ assert.equal(manualRetryRun({old:retry},config,'Leetcoder071',now).target,5);
+ assert.equal(manualRetryRun({old:retry,done:{...retry,id:'done',resumedFrom:retry.id,status:'completed'}},config,'Leetcoder071',now),null);
+});
+
+test('switching manual review off submits the saved batch without new AI drafts',async()=>{
+ const f=fixture();f.runner.start({...config,reviewBeforeSubmit:true},true,5,'Leetcoder071');await f.runner.done;
+ assert.equal(f.calls.solved,5);assert.equal(f.calls.submitted.length,0);
+ f.runner.start({...config,reviewBeforeSubmit:false},true,5,'Leetcoder071');await f.runner.done;
+ const run=Object.values(f.runs).find(r=>r.status==='completed');assert.ok(run);assert.equal(run.tasks.length,5);
+ assert.equal(f.calls.solved,5);assert.equal(f.calls.submitted.length,5);assert.equal(f.calls.discovered.length,1);
+});

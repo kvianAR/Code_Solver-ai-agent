@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {webcrypto} from 'node:crypto';
 import {retryTime,bridgeError} from '../extension/retry-policy.js';
 const source=readFileSync(new URL('../extension/leetcode.js',import.meta.url),'utf8');
 const now=Date.parse('2026-10-28T06:00:00Z');
@@ -11,7 +12,7 @@ const limited=(after='60')=>({ok:false,status:429,headers:{get:name=>name==='ret
 function bridge(handler,username='Student',start=now){
  let listener,clock=start;const requests=[];
  class Clock extends Date{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}}
- const context={Date:Clock,setTimeout(callback,ms){clock+=ms||0;callback();},document:{cookie:'csrftoken=fixture'},chrome:{runtime:{onMessage:{addListener(fn){listener=fn;}},sendMessage:async()=>({ok:true})}},fetch:async(url,options)=>{requests.push({url,at:clock,body:options?.body});return handler(url,options,requests);}};
+ const context={crypto:webcrypto,DOMParser:class {parseFromString(value){return {querySelectorAll:()=>[],body:{textContent:value}};}},Date:Clock,setTimeout(callback,ms){clock+=ms||0;callback();},document:{cookie:'csrftoken=fixture'},chrome:{runtime:{onMessage:{addListener(fn){listener=fn;}},sendMessage:async()=>({ok:true})}},fetch:async(url,options)=>{requests.push({url,at:clock,body:options?.body});return handler(url,options,requests);}};
  vm.runInNewContext(source,context);
  const send=(message={})=>new Promise(resolve=>listener({type:'leetcode-preflight',problem,code:'class Solution: pass',username,...message},null,resolve));
  return {send,requests};
@@ -57,4 +58,23 @@ test('a rejected submit HTTP 429 is marked definitely unsent, while no judged ID
 test('shared retry policy respects server deadlines and backs off unreported deadlines across repeated throttles',()=>{
  assert.equal(retryTime({retryAt:'2026-10-28T06:07:00Z'},now),'2026-10-28T06:07:00.000Z');
  assert.equal(retryTime({},now,0),'2026-10-28T06:01:00.000Z');assert.equal(retryTime({},now,1),'2026-10-28T06:02:00.000Z');assert.equal(retryTime({},now,9),'2026-10-28T06:15:00.000Z');
+});
+
+
+test('manual discovery filters list metadata before loading only the requested two or five statements',async()=>{
+ for(const count of [2,5]){
+  let lists=0,details=0;
+  const b=bridge((_url,options)=>{
+   const body=JSON.parse(options.body);
+   if(body.query.includes('globalData'))return ok({data:{userStatus:{isSignedIn:true,username:'Student'}}});
+   if(body.query.includes('problemsetQuestionList')){lists++;return ok({data:{problemsetQuestionList:{total:100,questions:[
+    ...Array.from({length:80},(_,i)=>({titleSlug:'solved-'+i,status:'ac',difficulty:'Easy',paidOnly:false})),
+    ...Array.from({length:20},(_,i)=>({titleSlug:'fresh-'+i,status:null,difficulty:'Easy',paidOnly:false}))]}}});}
+   assert.ok(body.variables.titleSlug.startsWith('fresh-'));details++;
+   return ok({data:{question:{questionId:String(details),titleSlug:body.variables.titleSlug,title:'Fresh',content:'Return n',difficulty:'Easy',status:null,exampleTestcases:'1',codeSnippets:[{langSlug:'python3',code:'class Solution: pass'}]}}});
+  });
+  const response=await b.send({type:'leetcode-discover',options:{count,language:'python',selectionMode:'roadmap',allowedDifficulties:['Easy']}});
+  assert.equal(response.ok,true,JSON.stringify(response));assert.equal(response.value.questions.length,count);assert.equal(lists,1);assert.equal(details,count);
+  assert.equal(b.requests.length,count+2);
+ }
 });

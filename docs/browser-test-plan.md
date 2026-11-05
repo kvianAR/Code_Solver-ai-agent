@@ -75,3 +75,10 @@ The automation available in this chat cannot open `chrome-extension://` pages. R
 ## 3.3.5 retained daily questions
 
 This version supersedes earlier automatic Easy-replacement scenarios. Fail any daily question using three distinct approaches or unusable preparations: it must stay pending with its concrete failure, no new skip and no replacement discovery. Retry must retain failure history and judged counts. A temporary local syntax-service outage must schedule automatic recovery without a review gate. Unknown submission recovery and explicit Stop remain enforced.
+
+## 3.3.6 manual batches
+
+- With review mode off, request two then five questions and verify the requested number of actual accepted judge results. With review mode on, verify five review drafts and no judged submission.
+- Interrupt a five-question batch with a temporary test-service failure after one acceptance. Confirm an exact manual retry alarm, account verification and resumption of the saved draft and remaining tasks, even before the daily start time. Confirm the accepted task is never resubmitted.
+- Complete the resumed batch, then poll again: its older retry record must not restart. Stop must prevent scheduled resumption; a different account must not inherit work.
+- Include many already-solved roadmap questions in the list metadata. Confirm selection fetches only the full statements needed for the batch, rather than probing solved questions.

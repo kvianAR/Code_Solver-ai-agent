@@ -11,6 +11,12 @@ export function repairQotdPreparation(run,config){
   task.preparationRepair={reason:'increased-output-budget',outputLimit:limit,previousFailures:task.preparationFailures||0};
   return true;
 }
+export function manualRetryRun(runs,config,username,now=new Date()){
+  if(!config.leetcode?.enabled||!username)return null;
+  const date=localClock(config.timezone,now).date,ancestors=new Set(Object.values(runs).map(r=>r.resumedFrom).filter(Boolean));
+  return Object.values(runs).filter(r=>r.mode==='manual'&&r.date===date&&r.username?.toLowerCase()===username.toLowerCase()&&!ancestors.has(r.id)&&!r.requestedSlug&&r.status==='retrying'&&!r.reviewRequired&&Date.parse(r.nextRetryAt)<=now.getTime())
+    .sort((a,b)=>(b.startedAt||'').localeCompare(a.startedAt||''))[0]||null;
+}
 export function unresolvedSubmission(runs,username,titleSlug){
   const rows=Object.values(runs).filter(run=>run.username?.toLowerCase()===username?.toLowerCase()).flatMap(run=>(run.tasks||[]).filter(task=>task.problem?.titleSlug===titleSlug).map(task=>({task,date:run.date})));
   const keys=(record,date)=>[record.submissionId?'id:'+record.submissionId:'',record.fingerprint&&record.at?`${date}:${record.at}:${record.fingerprint}`:''].filter(Boolean);
@@ -221,12 +227,21 @@ export class LeetCodeRunner {
     try {
       const runs = await this.io.load();
       if (!manual && (!config.autoMode || clock.time < config.dailyStartTime || TERMINAL.has(dailyRunForAccount(runs,clock.date,accountUsername)?.status))) return;
+      const resumedIds=new Set(Object.values(runs).map(r=>r.resumedFrom).filter(Boolean));
+      const previousManual=manual&&!requestedSlug&&accountUsername?Object.values(runs)
+        .filter(r=>!resumedIds.has(r.id)&&!r.requestedSlug&&r.mode==='manual'&&r.date===clock.date&&r.username?.toLowerCase()===accountUsername.toLowerCase()&&r.target===manualTarget&&['blocked','retrying','waiting','interrupted','failed',...(!config.reviewBeforeSubmit?['review']:[])].includes(r.status))
+        .sort((a,b)=>(b.startedAt||'').localeCompare(a.startedAt||''))[0]:null;
+      const manualResume=(previousManual?.tasks||[]).map(task=>{
+        if(task.status==='accepted'||config.reviewBeforeSubmit&&task.status==='review')return structuredClone(task);
+        return {...structuredClone(task),status:'pending',attempts:0,submissionAttempts:0,submissionHistory:[],submittedCodeFingerprints:[],
+          cachedDraft:task.solution?.code&&task.verification?.ok?{...task.solution,provider:task.provider}:null};
+      });
       const acceptedResume=structuredClone(resumeTasks).filter(t=>t.status==='accepted');
       const resumeLimit=config.dailyQuestionCount;
       run = {id: active.id, date: clock.date, mode: manual ? 'manual' : 'automatic',
         target: requestedSlug ? 1 : manual ? manualTarget : config.dailyQuestionCount, status: 'discovering',
         startedAt: this.io.now().toISOString(), username:accountUsername, retryNumber, timezone:config.timezone,
-        tasks: manual ? [] : acceptedResume.slice(0,resumeLimit)};
+        tasks: manual ? manualResume : acceptedResume.slice(0,resumeLimit),resumedFrom:previousManual?.id||'',requestedSlug};
       const previousDaily=accountUsername?Object.values(runs).filter(r=>r.mode==='automatic'&&r.date===clock.date&&r.username?.toLowerCase()===accountUsername.toLowerCase()):[];
       run.qotdDisposition=previousDaily.find(r=>r.qotdDisposition==='already-accepted')?.qotdDisposition||'';
       const skipped=skippedDailyQuestions(runs,clock.date,accountUsername);run.skipCount=skipped.size;
@@ -290,7 +305,7 @@ export class LeetCodeRunner {
       await this.io.save(run);
       for (const task of run.tasks) {
         if(run.tasks.filter(t=>t.status==='accepted').length>=run.target)break;
-        if(task.status==='accepted'||task.status==='skipped')continue;
+        if(task.status==='accepted'||task.status==='skipped'||manual&&config.reviewBeforeSubmit&&task.status==='review')continue;
         run.currentQuestion=task.problem.titleSlug;
         const reviewTask=config.reviewBeforeSubmit&&manual;
         const uncertain=unresolvedSubmission(runs,run.username,task.problem.titleSlug);
