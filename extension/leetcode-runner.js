@@ -2,8 +2,8 @@ import {retryTime,temporaryFailure} from './retry-policy.js';
 // A user-requested retry after increasing the output budget opens one new
 // preparation window. Keep cumulative failures and all judged submission limits.
 export function repairQotdPreparation(run,config){
-  if(run?.reviewReason!=='qotd-needs-repair')return false;
-  const task=run.tasks?.find(t=>t.problem?.selection==='QOTD'&&t.status==='blocked');
+  if(!['qotd-needs-repair','question-needs-repair'].includes(run?.reviewReason))return false;
+  const task=run.tasks?.find(t=>t.status==='blocked'&&(!run.currentQuestion||t.problem?.titleSlug===run.currentQuestion));
   const limit=Number(config.maxOutputTokens)||0;
   if(!task||!/truncat/i.test(task.feedback||'')||failedApproaches(task).length>=APPROACH_LIMIT||limit<8192||limit<=Math.max(task.preparationOutputLimit||0,task.preparationRepairOutputLimit||0))return false;
   task.preparationLimit=(task.preparationFailures||0)+APPROACH_LIMIT;
@@ -82,6 +82,7 @@ export function automaticRetryDecision(run, config, now = new Date()) {
   if (!config.autoMode || !config.leetcode?.enabled) return {due:false, reason:'Auto Mode is off'};
   if (clock.time < config.dailyStartTime) return {due:false, reason:`Scheduled for ${config.dailyStartTime}`};
   if (!run) return {due:true, reason:'Scheduled time passed; starting now'};
+  if (run.reviewRequired&&['qotd-needs-repair','question-needs-repair'].includes(run.reviewReason)) return {due:false,reason:'This question remains pending. Repair the reported draft failure and use Retry today; judged submission limits still apply.'};
   if (run.reviewRequired) return {due:false, reason:run.reviewReason==='daily-skip-limit'?'Three questions were skipped today; automatic work is paused. Check the notification.':'Submission safety needs attention; review this question before trying again'};
   if ((run.tasks || []).filter(t=>t.status==='accepted').length >= config.dailyQuestionCount&&qotdSatisfied(run)) return {due:false, reason:'Daily target completed'};
   if (['review','prepared','completed'].includes(run.status)) return {due:true,reason:'The full daily allotment still needs accepted results; resuming remaining questions.'};
@@ -350,7 +351,7 @@ export class LeetCodeRunner {
             task.feedback='Choose a genuinely different algorithm, name it in approach, and change the code. Previously failed approaches: '+failedApproaches(task).map(r=>r.approach).join(', ');
             task.repeatedApproaches=(task.repeatedApproaches||0)+1;task.status='pending';await this.io.save(run);
             task.preparationFailures=(task.preparationFailures||0)+1;await this.io.save(run);
-            if(task.preparationFailures>=(task.preparationLimit||APPROACH_LIMIT)){task.feedback=task.problem.selection==='QOTD'?'Draft preparation could not produce a distinct usable approach. QOTD remains required.':'Three draft preparation attempts could not produce a distinct usable approach. Selecting an Easy replacement.';break;}continue;
+            if(task.preparationFailures>=(task.preparationLimit||APPROACH_LIMIT)){task.feedback='Draft preparation could not produce a distinct usable approach. This question remains pending.';break;}continue;
           }
           let attempt=task.approachHistory.find(row=>row.fingerprint===draftFingerprint);
           if(!attempt){attempt={approach,fingerprint:draftFingerprint,status:'prepared',at:this.io.now().toISOString()};task.approachHistory.push(attempt);}
@@ -361,7 +362,9 @@ export class LeetCodeRunner {
           }catch(error){
             if(active.stop)return await this.finishStopped(run);
             task.verification={ok:false,feedback:`Local syntax check unavailable: ${error.message}`};
-            task.feedback=task.verification.feedback;task.status='blocked';run.reviewRequired=true;
+            task.feedback=task.verification.feedback;
+            if(temporaryFailure(error)){task.status='retrying';run.nextRetryAt=retryTime(error,this.io.now().getTime());}
+            else {task.status='blocked';run.reviewRequired=true;}
             await this.io.save(run);break;
           }
           if(active.stop)return await this.finishStopped(run);
@@ -427,21 +430,10 @@ export class LeetCodeRunner {
           }
         }
         if(!manual&&task.status!=='accepted'&&(failedApproaches(task).length>=APPROACH_LIMIT||(task.preparationFailures||0)>=(task.preparationLimit||APPROACH_LIMIT))){
-          if(task.problem.selection==='QOTD'){
-            task.status='blocked';delete task.skipReason;run.qotdDisposition='';
-            run.reviewRequired=true;run.reviewReason='qotd-needs-repair';
-            task.feedback='QOTD remains required. Three approaches or draft preparation attempts failed; repair is needed before continuing. QOTD will not be skipped or replaced. Last failure: '+task.feedback;
-            await this.io.save(run);break;
-          }
-          task.status='skipped';task.skipReason=failedApproaches(task).length>=3?'three-approaches-failed':'draft-preparation-failed';task.feedback=task.skipReason==='three-approaches-failed'?'Three different approaches failed syntax, examples or judging. Replacing with an untouched Easy question.':'Three preparation attempts could not produce a usable distinct draft. Replacing with an untouched Easy question; this is not three different failed algorithms.';
-          skipped.add(task.problem.titleSlug);run.skipCount=skipped.size;
-          await this.io.save(run);
-          if(skipped.size>=DAILY_SKIP_LIMIT){run.reviewRequired=true;run.reviewReason='daily-skip-limit';run.feedback='Three questions were skipped today. Automatic work has stopped; review is needed.';break;}
-          const before=run.tasks.length;
-          if(await discoverMore(1,false,true)){
-            const replacement=run.tasks.pop();run.tasks.splice(run.tasks.indexOf(task)+1,0,replacement);await this.io.save(run);
-          }else {run.feedback='No untouched Easy replacement was available. The remaining allotment is still pending.';if(run.tasks.length===before)break;}
-          continue;
+          task.status='blocked';delete task.skipReason;
+          run.reviewRequired=true;run.reviewReason=task.problem.selection==='QOTD'?'qotd-needs-repair':'question-needs-repair';
+          task.feedback='Question remains pending. Three approaches or draft preparation attempts failed. Repair is needed to resume this same question. Last failure: '+task.feedback;
+          await this.io.save(run);break;
         }
         if (!['accepted','blocked','retrying','review'].includes(task.status)) task.status = manual?'failed':'retrying';
         await this.io.save(run);

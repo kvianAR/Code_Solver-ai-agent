@@ -2,7 +2,7 @@ const $=s=>document.querySelector(s);
 const extension=typeof chrome!=='undefined'&&!!chrome.runtime?.id;
 let connection=null,state=null,catalog=[],page='today',busy=false,leetcodeRuns={},leetcodeContests=[],contestCalendarUpdatedAt=0,contestCalendarError='',liveRun=null,leetcodeAccount='',leetcodeSession=null,activeRunId=null,stopping=false,dailyDiagnostic=null;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const pill=(text,type='')=>`<span class="pill ${type}">${esc(['waiting','retrying'].includes(text)?'Automatic retry':text)}</span>`;
+const pill=(text,type='')=>`<span class="pill ${type}">${esc(['waiting','retrying'].includes(text)?'Automatic retry':text==='blocked'?'Pending · needs attention':text==='skipped'?'Historical skip':text)}</span>`;
 const getManualCount=()=>Math.max(1,Math.min(100,Math.trunc(Number($('#manual-count')?.value)||2)));
 let setupDiagnostics=null,checkingSetup=false;
 function historyMatches(run){return (!$('#history-account').value||String(run.username||'').toLowerCase().includes($('#history-account').value.toLowerCase().trim()))&&(!$('#history-date').value||run.date===$('#history-date').value)&&(!$('#history-status').value||run.status===$('#history-status').value);}

@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.3.5 — Retain every daily question and recover syntax-service outages
+
+- Stop creating skipped questions or Easy replacements in automatic daily runs. After three failed approaches or preparation attempts, retain the same question, its concrete failure and all progress for repair. Apply the output-budget repair path to ordinary questions as well as QOTD.
+- Retry temporary local syntax-service failures at the supplied deadline instead of setting a permanent review gate.
+- Show persisted safety pauses as Pending · needs attention in the dashboard and popup. Unknown submissions, judged limits, Stop and historical skip evidence still require their existing recovery checks; a label change never grants another submission.
+- Update regression tests for retained questions, no replacement, preserved failure history and syntax-service recovery.
+
+
 ## 3.3.4 — Retry QOTD after repairing a truncated provider response
 
 - An explicit Retry today after increasing the output budget grants one new three-attempt QOTD preparation window for truncation failures. Retain cumulative preparation failures, failed algorithms, judged submission counts, daily skips and account history. The same output limit cannot repeatedly reopen the window.

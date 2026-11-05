@@ -14,45 +14,45 @@ function fixture({fail=()=>false,preflightFail=()=>false,already=false,repeated=
   notify:async(...args)=>calls.notices.push(args)};
  return {runner:new LeetCodeRunner(io),runs,calls};
 }
-test('three different known rejections skip QOTD and an Easy replacement completes the full allotted count',async()=>{
+test('ordinary questions stay pending after three known rejections without replacement',async()=>{
  const f=fixture({fail:slug=>slug==='qotd',required:false});f.runner.start(config,false,2,username);await f.runner.done;const run=Object.values(f.runs)[0];
- assert.equal(run.status,'completed');assert.equal(run.tasks.filter(t=>t.status==='accepted').length,2);assert.equal(run.tasks.find(t=>t.problem.titleSlug==='qotd').status,'skipped');
- assert.equal(run.skipCount,1);assert.equal(run.qotdDisposition,'already-accepted');assert.equal(hasAcceptedQotd(run),false);assert.equal(qotdSatisfied(run),true);
- assert.deepEqual(f.calls.solve.filter(r=>r.slug==='qotd').map(r=>r.plan.number),[1,2,3]);assert.equal(f.calls.submit.filter(slug=>slug==='qotd').length,3);
- const replacement=f.calls.discover.at(-1);assert.deepEqual(replacement.allowedDifficulties,['Easy']);assert.equal(replacement.selectionMode,'random');assert.equal(replacement.requireQotd,false);
- assert.equal(dailyQotdDisposition(f.runs,date,username),'already-accepted');assert.equal(deadlineNotice(config,f.runs,username,{},new Date('2026-10-28T18:20:00Z')),null);
+ assert.equal(run.status,'blocked');assert.equal(run.reviewReason,'question-needs-repair');assert.equal(run.skipCount,0);
+ assert.equal(run.tasks[0].skipReason,undefined);assert.equal(run.tasks[1].status,'queued');assert.equal(f.calls.discover.length,1);
+ assert.deepEqual(f.calls.solve.map(r=>r.plan.number),[1,2,3]);assert.equal(f.calls.submit.length,3);
 });
+
 test('already-accepted QOTD is excluded and the configured number of other questions must be newly accepted',async()=>{
  const f=fixture({already:true});f.runner.start(config,false,2,username);await f.runner.done;const run=Object.values(f.runs)[0];
  assert.equal(run.status,'completed');assert.equal(run.qotdDisposition,'already-accepted');assert.deepEqual(f.calls.submit,['new-one','new-two']);assert.equal(run.tasks.length,2);assert.ok(!run.tasks.some(t=>t.problem.titleSlug==='old-qotd'));
 });
-test('three failed test approaches count as a skip but never send failing drafts to the judge',async()=>{
+test('three failed preflight approaches retain the question without sending any judged submission',async()=>{
  const f=fixture({preflightFail:slug=>slug==='qotd',required:false});f.runner.start(config,false,2,username);await f.runner.done;const run=Object.values(f.runs)[0];
- assert.equal(run.status,'completed');assert.equal(run.skipCount,1);assert.equal(f.calls.submit.includes('qotd'),false);assert.equal(run.tasks[0].approachHistory.filter(a=>a.status==='test-failed').length,3);
+ assert.equal(run.status,'blocked');assert.equal(run.skipCount,0);assert.equal(f.calls.submit.length,0);
+ assert.equal(run.tasks[0].approachHistory.filter(a=>a.status==='test-failed').length,3);assert.equal(f.calls.discover.length,1);
 });
-test('the third skipped question stops the daily run, notifies, and cannot be reset by retrying or archives',async()=>{
- const f=fixture({fail:()=>true,required:false});f.runner.start(config,false,2,username);await f.runner.done;const run=Object.values(f.runs)[0];
- assert.equal(run.skipCount,3);assert.equal(run.reviewReason,'daily-skip-limit');assert.equal(run.status,'blocked');assert.equal(run.tasks.filter(t=>t.status==='skipped').length,3);assert.equal(f.calls.submit.length,9);assert.equal(f.calls.discover.length,3);
- assert.match(f.calls.notices.at(-1).join(' '),/Three daily skips reached/);assert.equal(automaticRetryDecision(run,config,new Date('2026-10-28T17:00:00Z')).due,false);
- assert.equal(archiveRetryableAutomaticRun(f.runs,run.id,'automatic-history:cap'),true);
- const retry=fixture({initial:f.runs});retry.runner.start(config,false,2,username);await retry.runner.done;assert.equal(retry.calls.solve.length,0);assert.equal(retry.calls.discover.length,0);assert.equal(retry.calls.notices.length,1);
- const other=fixture({initial:f.runs});other.runner.io.session=async()=> 'Other';other.runner.io.discover=async()=>({username:'Other',qotdAlreadyAccepted:'old',questions:[q('other-one'),q('other-two')]});other.runner.start(config,false,2,'Other');await other.runner.done;assert.equal(Object.values(other.runs).find(r=>r.username==='Other').status,'completed');
+
+test('historical daily skip evidence remains capped without creating new skips',async()=>{
+ const initial={old:{id:'old',date,mode:'automatic',username,status:'blocked',tasks:[1,2,3].map(i=>({status:'skipped',skipReason:'three-approaches-failed',problem:q('old-'+i)}))}};
+ const f=fixture({initial});f.runner.start(config,false,2,username);await f.runner.done;const run=Object.values(f.runs).find(r=>r.id!=='old');
+ assert.equal(run.reviewReason,'daily-skip-limit');assert.equal(run.skipCount,3);assert.equal(f.calls.solve.length,0);assert.equal(f.calls.discover.length,0);
 });
+
 test('429 schedules a timed retry, not an approach failure or skip, and untried work stays queued',async()=>{
  const f=fixture({network:true});f.runner.start(config,false,2,username);await f.runner.done;const run=Object.values(f.runs)[0];
  assert.equal(run.status,'retrying');assert.deepEqual(run.tasks.map(t=>t.status),['retrying','queued']);assert.equal(run.skipCount,0);assert.equal(f.calls.submit.length,0);assert.equal(run.tasks[0].approachHistory[0].status,'prepared');assert.equal(run.nextRetryAt,'2026-10-28T06:01:00.000Z');
 });
-test('repeated algorithms trigger bounded preparation replacement without claiming three different algorithms',async()=>{
+test('repeated algorithms keep the same question pending after bounded preparation',async()=>{
  const f=fixture({fail:()=>true,repeated:true,required:false});f.runner.start(config,false,2,username);await f.runner.done;const run=Object.values(f.runs)[0];
- assert.equal(run.status,'blocked');assert.equal(run.reviewReason,'daily-skip-limit');assert.equal(run.skipCount,3);assert.equal(f.calls.submit.length,3);
- for(const task of run.tasks.filter(t=>t.status==='skipped')){assert.equal(task.skipReason,'draft-preparation-failed');assert.equal(task.approachHistory.length,1);assert.equal(task.preparationFailures,3);}
+ assert.equal(run.reviewReason,'question-needs-repair');assert.equal(run.skipCount,0);assert.equal(f.calls.submit.length,1);
+ assert.equal(run.tasks[0].preparationFailures,3);assert.equal(run.tasks[0].approachHistory.length,1);assert.equal(f.calls.discover.length,1);
 });
+
 test('failed approach history survives a service outage and resumption without resetting the three-approach cap',async()=>{
  const f=fixture({fail:slug=>slug==='qotd',required:false});let checks=0;f.runner.io.preflight=async(problem)=>{if(problem.titleSlug==='qotd'&&++checks===2)throw Error('Run Code unavailable (429)');return {ok:true};};
  f.runner.start(config,false,2,username);await f.runner.done;const old=Object.values(f.runs)[0];assert.equal(old.status,'retrying');assert.equal(old.tasks[0].submissionAttempts,1);
  archiveRetryableAutomaticRun(f.runs,old.id,'automatic-history:outage');const retry=fixture({initial:f.runs,fail:slug=>slug==='qotd',required:false});
  retry.runner.start(config,false,2,username);await retry.runner.done;const run=Object.values(retry.runs).find(r=>r.id===old.id);
- assert.equal(run.status,'completed',JSON.stringify({run,calls:retry.calls}));assert.equal(run.skipCount,1);assert.equal(retry.calls.submit.filter(s=>s==='qotd').length,2);assert.equal(run.tasks[0].approachHistory.filter(a=>a.status==='rejected').length,3);
+ assert.equal(run.status,'blocked',JSON.stringify({run,calls:retry.calls}));assert.equal(run.skipCount,0);assert.equal(retry.calls.submit.filter(s=>s==='qotd').length,2);assert.equal(run.tasks[0].approachHistory.filter(a=>a.status==='rejected').length,3);
 });
 test('stopping an in-flight result does not prevent reconciliation or permit an unsafe replacement',async()=>{
  const initial={old:{id:'old',date,mode:'automatic',username,status:'stopped',target:2,tasks:[{status:'stopped',problem:q('qotd','QOTD'),submissionId:'123',submissionHistory:[{status:'unknown',submissionId:'123'}]}]}};
@@ -97,8 +97,8 @@ test('typed unusable draft errors count as preparation failures despite misleadi
   return {code:'class Solution: pass',approach:'linear scan',provider:'gemini'};
  };
  f.runner.start(config,false,2,username);await f.runner.done;const run=Object.values(f.runs)[0];
- assert.equal(run.status,'completed');assert.equal(run.skipCount,1);assert.equal(run.tasks[0].preparationFailures,3);
- assert.equal(run.tasks[0].skipReason,'draft-preparation-failed');
+ assert.equal(run.status,'blocked');assert.equal(run.skipCount,0);assert.equal(run.tasks[0].preparationFailures,3);
+ assert.equal(run.tasks[0].skipReason,undefined);
 });
 
 
@@ -107,7 +107,7 @@ test('required QOTD never skips or gets replaced after three failed approaches',
  const run=Object.values(f.runs)[0];assert.equal(run.status,'blocked');assert.equal(run.reviewReason,'qotd-needs-repair');
  assert.equal(run.skipCount,0);assert.equal(run.tasks[0].status,'blocked');assert.equal(run.tasks[0].skipReason,undefined);
  assert.equal(qotdSatisfied(run),false);assert.equal(f.calls.discover.length,1);assert.equal(f.calls.submit.length,3);
- assert.equal(run.tasks[1].status,'queued');assert.match(run.tasks[0].feedback,/will not be skipped/);
+ assert.equal(run.tasks[1].status,'queued');assert.match(run.tasks[0].feedback,/Question remains pending/);
 });
 test('legacy skipped QOTD is not a completion exemption',()=>{
  for(const disposition of ['three-approaches-failed','draft-preparation-failed'])assert.equal(qotdSatisfied({qotdDisposition:disposition,tasks:[]}),false);
@@ -124,4 +124,12 @@ test('larger output budget permits one explicit QOTD preparation repair and reta
  const f=fixture({initial});f.runner.start({...config,maxOutputTokens:16384},false,2,username);await f.runner.done;
  const current=Object.values(f.runs).find(r=>r.id!=='old');assert.equal(current.status,'completed');
  assert.equal(current.tasks[0].preparationFailures,3);assert.equal(current.tasks[0].preparationLimit,6);
+});
+
+
+test('local syntax service outage retries the same draft without a permanent review gate',async()=>{
+ const f=fixture();f.runner.io.verify=async()=>{throw Object.assign(Error('Connection failed'),{kind:'temporary',retryAt:'2026-10-28T06:04:00.000Z'});};
+ f.runner.start(config,false,2,username);await f.runner.done;const run=Object.values(f.runs)[0];
+ assert.equal(run.status,'retrying');assert.equal(run.reviewRequired,undefined);assert.equal(run.skipCount,0);assert.equal(run.nextRetryAt,'2026-10-28T06:04:00.000Z');
+ assert.equal(run.tasks[1].status,'queued');assert.equal(f.calls.submit.length,0);
 });

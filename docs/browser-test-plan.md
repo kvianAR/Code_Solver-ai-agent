@@ -71,3 +71,7 @@ The automation available in this chat cannot open `chrome-extension://` pages. R
 
 - Exhaust QOTD preparation on truncated outputs at 4096 tokens. Increase the configured output limit to 16384 and explicitly retry today. Confirm a fresh preparation window while cumulative failures remain three, with unchanged submission and daily skip history.
 - Retry again at the same output limit. Confirm it cannot create another preparation allowance. Never reopen the window for three genuine failed approaches or unknown submission results.
+
+## 3.3.5 retained daily questions
+
+This version supersedes earlier automatic Easy-replacement scenarios. Fail any daily question using three distinct approaches or unusable preparations: it must stay pending with its concrete failure, no new skip and no replacement discovery. Retry must retain failure history and judged counts. A temporary local syntax-service outage must schedule automatic recovery without a review gate. Unknown submission recovery and explicit Stop remain enforced.
