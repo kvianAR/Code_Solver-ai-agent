@@ -10,12 +10,12 @@ const source=readFileSync(new URL('../extension/background.js',import.meta.url),
   .replace(/^import .*?;\n/gm,'');
 
 async function runPoll(due,precheck=false,sessionResponse={ok:true,value:{signedIn:true,username:'TestUser'}},overrides={}){
-  const tabs=[],created=[],removed=[],notifications=[],started=[],saved={connection:{url:'http://127.0.0.1:8787',token:'test'},
+  const messages=[],tabs=[],created=[],removed=[],notifications=[],started=[],saved={connection:{url:'http://127.0.0.1:8787',token:'test'},
     leetcodeRuns:{},leetcodeAccount:'TestUser',contestCalendarVersion:2,
     contestCalendarUpdatedAt:Date.now(),leetcodeContests:[]};
   Object.assign(saved,overrides);
   const config={autoMode:true,dailyStartTime:due?'00:00':'23:59',timezone:'Asia/Kolkata',
-    dailyQuestionCount:2,leetcode:{enabled:true}};
+    dailyQuestionCount:2,reviewBeforeSubmit:true,leetcode:{enabled:true}};
   const state={config,notifications:[],jobs:[],today:'2026-10-06'};
   const chrome={
     storage:{local:{
@@ -27,7 +27,7 @@ async function runPoll(due,precheck=false,sessionResponse={ok:true,value:{signed
     alarms:{async create(){},onAlarm:{addListener(){}}},
     notifications:{async create(id,details){notifications.push({id,...details});},onClicked:{addListener(){}}},
     runtime:{id:'test-extension',onInstalled:{addListener(){}},onStartup:{addListener(){}},
-      onMessage:{addListener(){}},getURL:path=>`chrome-extension://test/${path}`},
+      onMessage:{addListener(listener){messages.push(listener);}},getURL:path=>`chrome-extension://test/${path}`},
     tabs:{async query(){return [...tabs];},async create(options){const tab={id:7,url:options.url,status:'complete'};
       tabs.push(tab);created.push(tab);return tab;},async get(id){const tab=tabs.find(tab=>tab.id===id);
       if(!tab)throw Error('Tab gone');return tab;},async remove(id){removed.push(id);tabs.splice(tabs.findIndex(tab=>tab.id===id),1);},
@@ -49,7 +49,7 @@ async function runPoll(due,precheck=false,sessionResponse={ok:true,value:{signed
   for(let i=0;i<20&&!saved.lastPollAt;i++)await new Promise(resolve=>setImmediate(resolve));
   for(let i=0;i<5;i++)await new Promise(resolve=>setImmediate(resolve));
   assert.ok(saved.lastPollAt,'background poll finished');
-  return {created,removed,tabs,saved,notifications,started};
+  return {created,removed,tabs,saved,notifications,started,message:message=>new Promise(resolve=>messages[0](message,{id:chrome.runtime.id},resolve))};
 }
 
 test('idle scheduler does not open LeetCode; a due run closes its temporary tab',async()=>{
@@ -103,6 +103,12 @@ test('an active LeetCode cooldown suppresses all browser requests and arms an ex
 
 test('due manual batches verify login and resume before the daily schedule time',async()=>{
  const date=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
- const f=await runPoll(false,false,{ok:true,value:{signedIn:true,username:'TestUser'}},{leetcodeRuns:{pending:{id:'pending',date,mode:'manual',username:'TestUser',target:5,status:'retrying',nextRetryAt:new Date(Date.now()-60000).toISOString(),tasks:[]}}});
- assert.equal(f.started.length,1);assert.equal(f.started[0][1],true);assert.equal(f.started[0][2],5);assert.equal(f.started[0][3],'TestUser');
+ const f=await runPoll(false,false,{ok:true,value:{signedIn:true,username:'TestUser'}},{leetcodeRuns:{pending:{id:'pending',date,mode:'manual',username:'TestUser',target:5,status:'retrying',reviewBeforeSubmit:false,nextRetryAt:new Date(Date.now()-60000).toISOString(),tasks:[]}}});
+ assert.equal(f.started.length,1);assert.equal(f.started[0][1],true);assert.equal(f.started[0][2],5);assert.equal(f.started[0][3],'TestUser');assert.equal(f.started[0][0].reviewBeforeSubmit,false);
+});
+
+
+test('the manual solve button submits even while saved learning review mode is enabled',async()=>{
+ const f=await runPoll(false);const response=await f.message({type:'run-leetcode-now',count:2});
+ assert.equal(response.ok,true);assert.equal(f.started.length,1);assert.equal(f.started[0][0].reviewBeforeSubmit,false);assert.equal(f.started[0][1],true);assert.equal(f.started[0][2],2);
 });

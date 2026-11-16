@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.3.8 — Visible manual progress and explicit solve-and-submit
+
+- Place a live manual progress panel directly below the controls. Show accepted/target counts, question names, current stage, test and judge failures, retry time and expandable feedback. Count actual accepted tasks as done.
+- Show startup immediately and retain launch errors in the manual area. Prevent repeated clicks while login/startup is pending.
+- Make the manual Solve & submit button start submission even when learning review mode is enabled. Persist the session review setting across automatic manual retries. Existing prepared batches can resume through the same button.
+- Verify progress rendering, failure escaping, immediate startup, two/five-question submission and background dispatch with regression tests.
+
+
 ## 3.3.7 — Coarena model API and exclusive provider mode
 
 - Add encrypted Coarena key storage, model catalog loading, selectable model, connection testing and usage/pricing diagnostics using https://coarena.ai/api/v1. Existing settings gain Coarena after Groq and Gemini.

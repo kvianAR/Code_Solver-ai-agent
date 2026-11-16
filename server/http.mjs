@@ -33,7 +33,7 @@ export function createServer(store,platform,agent,options={}) {
       if(!allowPairing(req,options.pairingKey)){send(403,{error:'Local extension pairing required'});return;}
       send(200,{token:store.state.adminToken});return;
     }
-    const assets={'/':'dashboard.html','/app.js':'app.js','/connection.js':'connection.js','/practice-plan.js':'practice-plan.js','/portable-data.js':'portable-data.js','/failure-guide.js':'failure-guide.js','/advanced.js':'advanced.js','/practice-plus.js':'practice-plus.js','/reliability-ui.js':'reliability-ui.js','/practice-metrics.js':'practice-metrics.js','/style.css':'style.css'};
+    const assets={'/':'dashboard.html','/app.js':'app.js','/manual-progress.js':'manual-progress.js','/connection.js':'connection.js','/practice-plan.js':'practice-plan.js','/portable-data.js':'portable-data.js','/failure-guide.js':'failure-guide.js','/advanced.js':'advanced.js','/practice-plus.js':'practice-plus.js','/reliability-ui.js':'reliability-ui.js','/practice-metrics.js':'practice-metrics.js','/style.css':'style.css'};
     if(req.method==='GET'&&assets[url.pathname]){res.writeHead(200,{'Content-Type':url.pathname.endsWith('.js')?'text/javascript':url.pathname.endsWith('.css')?'text/css':'text/html','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});res.end(fs.readFileSync(new URL('../extension/'+assets[url.pathname],import.meta.url)));return;}
     if(!authorized(req,store.state.adminToken)){send(401,{error:'Connection token required'});return;}
     let hintTicket=null;

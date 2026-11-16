@@ -76,10 +76,16 @@
 </div>
 <div class="session-controls">
 <label class="manual-count">Manual questions<input id="manual-count" type="number" min="1" max="100" value="2" inputmode="numeric"></label>
-<button id="run-now" class="primary">▶ Prepare 2 now</button>
+<button id="run-now" class="primary">▶ Solve & submit 2 now</button>
 <button id="stop-solving" class="quiet" disabled>■ Stop</button>
 </div>
 </div>
+<section id="manual-section" class="manual-session card" hidden aria-label="Manual session progress">
+<div class="task-head"><h2>Manual questions</h2><strong id="manual-status" role="status" aria-live="polite"></strong></div>
+<progress id="manual-progress" max="2" value="0" aria-label="Manual questions accepted"></progress>
+<p id="manual-step" role="status" aria-live="polite"></p>
+<ol id="manual-tasks" class="manual-question-list"></ol>
+</section>
 <div class="stats">
 <article class="card">
 <span>Today's automatic progress</span>
@@ -134,15 +140,7 @@
 </div>
 <div id="today-tasks" class="task-grid">
 </div>
-<div id="manual-section" hidden>
-<div class="section-label">
-<h2>Latest manual session</h2>
-<span id="manual-status" class="pill">
-</span>
-</div>
-<div id="manual-tasks" class="task-grid">
-</div>
-</div>
+
 <div class="section-label">
 <h2>Activity & notifications</h2>
 <span class="muted">Failures stay visible until resolved</span>
@@ -333,6 +331,7 @@
 <script src="portable-data.js"></script>
 <script src="failure-guide.js"></script>
 <script src="practice-metrics.js"></script>
+<script src="manual-progress.js"></script>
 <script src="app.js">
 </script>
 <script src="advanced.js"></script>

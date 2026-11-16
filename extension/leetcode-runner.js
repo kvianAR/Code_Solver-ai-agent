@@ -260,7 +260,7 @@ export class LeetCodeRunner {
       run = {id: active.id, date: clock.date, mode: manual ? 'manual' : 'automatic',
         target: requestedSlug ? 1 : manual ? manualTarget : config.dailyQuestionCount, status: 'discovering',
         startedAt: this.io.now().toISOString(), username:accountUsername, retryNumber, timezone:config.timezone,
-        tasks: manual ? manualResume : acceptedResume.slice(0,resumeLimit),resumedFrom:previousManual?.id||'',requestedSlug};
+        tasks: manual ? manualResume : acceptedResume.slice(0,resumeLimit),resumedFrom:previousManual?.id||'',requestedSlug,reviewBeforeSubmit:!!config.reviewBeforeSubmit};
       const previousDaily=accountUsername?Object.values(runs).filter(r=>r.mode==='automatic'&&r.date===clock.date&&r.username?.toLowerCase()===accountUsername.toLowerCase()):[];
       run.qotdDisposition=previousDaily.find(r=>r.qotdDisposition==='already-accepted')?.qotdDisposition||'';
       const skipped=skippedDailyQuestions(runs,clock.date,accountUsername);run.skipCount=skipped.size;

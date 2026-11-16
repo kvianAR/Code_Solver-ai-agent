@@ -1,5 +1,6 @@
 const $=s=>document.querySelector(s);
 const extension=typeof chrome!=='undefined'&&!!chrome.runtime?.id;
+let manualLaunch=null,manualStarting=false;
 let connection=null,state=null,catalog=[],page='today',busy=false,leetcodeRuns={},leetcodeContests=[],contestCalendarUpdatedAt=0,contestCalendarError='',liveRun=null,leetcodeAccount='',leetcodeSession=null,activeRunId=null,stopping=false,dailyDiagnostic=null;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pill=(text,type='')=>`<span class="pill ${type}">${esc(['waiting','retrying'].includes(text)?'Automatic retry':text==='blocked'?'Pending · needs attention':text==='skipped'?'Historical skip':text)}</span>`;
@@ -61,7 +62,7 @@ function render(){
   const c=state.config,job=c.leetcode?.enabled?liveRun:state.jobs.find(j=>j.id==='daily:'+state.today),usage=state.usage[state.today];
   const nextTargetChanged=job?.status==='completed'&&job.target!==c.dailyQuestionCount;
   $('#today-date').textContent=dateOnly(state.today).toUpperCase();$('#daily-count').textContent=`${job?.tasks.filter(t=>['ready','accepted'].includes(t.status)).length||0} / ${job?.target||c.dailyQuestionCount}`;$('#daily-status').textContent=['waiting','retrying'].includes(job?.status)?'Automatic retry':job?.status||'Scheduled';$('#next-daily-target').hidden=!nextTargetChanged;$('#next-daily-target').textContent=nextTargetChanged?`Current automatic allotment: ${c.dailyQuestionCount} questions; remaining work will resume.`:'';$('#streak').innerHTML=`${c.leetcode?.enabled?liveStreak():streak()} <em>days</em>`;
-  $('#start-time').textContent=c.dailyStartTime;$('#timezone-label').textContent=c.timezone;$('#token-count').textContent=(usage?.tokens||0).toLocaleString();$('#token-budget').textContent=`${c.dailyTokenBudget.toLocaleString()} daily budget · ${usage?.calls||0} calls`;$('#auto-label').textContent=c.autoMode?'Auto Mode ON':'Auto Mode paused';$('#run-now').textContent=c.leetcode?.enabled?`▶ ${state.config.reviewBeforeSubmit?'Prepare':'Solve & submit'} ${getManualCount()} now`:"▶ Run today's session";$('#run-now').disabled=c.leetcode?.enabled?(!extension||!!activeRunId):(!c.autoMode||job?.status==='running');$('#stop-solving').hidden=!c.leetcode?.enabled;$('#stop-solving').disabled=!activeRunId||stopping;$('#stop-solving').textContent=stopping?'Stopping…':'■ Stop';
+  $('#start-time').textContent=c.dailyStartTime;$('#timezone-label').textContent=c.timezone;$('#token-count').textContent=(usage?.tokens||0).toLocaleString();$('#token-budget').textContent=`${c.dailyTokenBudget.toLocaleString()} daily budget · ${usage?.calls||0} calls`;$('#auto-label').textContent=c.autoMode?'Auto Mode ON':'Auto Mode paused';$('#run-now').textContent=c.leetcode?.enabled?`▶ Solve & submit ${getManualCount()} now`:"▶ Run today's session";$('#run-now').disabled=c.leetcode?.enabled?(!extension||manualStarting||!!activeRunId):(!c.autoMode||job?.status==='running');$('#stop-solving').hidden=!c.leetcode?.enabled;$('#stop-solving').disabled=!activeRunId||stopping;$('#stop-solving').textContent=stopping?'Stopping…':'■ Stop';
   const metrics=practiceMetrics(leetcodeRuns,leetcodeAccount);
   $('#accuracy-summary').textContent=`First-submit accepted: ${metrics.firstAccepted}/${metrics.firstTotal}${metrics.firstTotal?` (${Math.round(100*metrics.firstAccepted/metrics.firstTotal)}%)`:''} · Run Code failures before submit: ${metrics.preflightFailures}/${metrics.preflightRuns}.`;
   $('#provider-outcomes').textContent=Object.entries(metrics.providers).map(([name,result])=>`${name}: ${result.accepted} accepted, ${result.rejected} rejected`).join(' · ')||'Provider outcomes appear after a judged submission. Earlier sessions may not include these metrics.';
@@ -70,15 +71,13 @@ function render(){
   const finished=active?.tasks.filter(t=>['accepted','review'].includes(t.status)).length||0;
   $('#session-progress').max=active?.target||1;$('#session-progress').value=finished;
   $('#session-step').textContent=active?`${finished}/${active.target} finished · ${currentTask?currentTask.problem.title+' · '+currentTask.status:active.status}`:job?.status==='review'?'Drafts ready for review; no judged submission was sent.':'No session is running';
-  $('#live-session-status').textContent=stopping?'Stopping draft preparation':activeRunId?`${active?.mode==='manual'?'Manual':'Automatic'} draft preparation running`:leetcodeSession?.status==='unavailable'?'LeetCode login check unavailable':leetcodeSession?.status==='signed-out'?'Sign in to LeetCode in this browser profile':leetcodeAccount?`Last verified: ${leetcodeAccount}`:'LeetCode login not yet checked';
+  $('#live-session-status').textContent=stopping?'Stopping session':activeRunId?`${active?.mode==='manual'?'Manual':'Automatic'} session running`:leetcodeSession?.status==='unavailable'?'LeetCode login check unavailable':leetcodeSession?.status==='signed-out'?'Sign in to LeetCode in this browser profile':leetcodeAccount?`Last verified: ${leetcodeAccount}`:'LeetCode login not yet checked';
   $('#live-session-help').textContent=c.leetcode?.enabled&&!extension?'Open the Practice Ex. extension in your signed-in browser to run account submissions.':`Automatic: ${c.dailyStartTime} every day. Drafts pass syntax and LeetCode example tests before a judged submission.`;
   $('#daily-diagnosis').textContent=(extension&&c.leetcode?.enabled?(dailyDiagnostic?.message||'Waiting for the next scheduler check.'):'Browser schedule diagnostics appear in the extension dashboard.')+(nextTargetChanged?` Current allotment: ${c.dailyQuestionCount} questions.`:'');
   $('#next-retry').textContent=dailyDiagnostic?.nextRetryAt?`Next retry: ${esc(formatDate(dailyDiagnostic.nextRetryAt,{hour:'2-digit',minute:'2-digit'}))} · ${c.timezone}`:'';
   $('#retry-daily').hidden=!extension||!c.leetcode?.enabled||!leetcodeAccount||!['blocked','failed','stopped','interrupted'].includes(liveRun?.status);
-  const manual=Object.values(leetcodeRuns).filter(r=>r.mode==='manual'&&r.username?.toLowerCase()===leetcodeAccount.toLowerCase()).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];
-  $('#manual-section').hidden=!manual||!c.leetcode?.enabled;
-  $('#manual-status').textContent=manual?`${manual.tasks.filter(t=>['ready','accepted'].includes(t.status)).length}/${manual.target} · ${manual.status}`:'';
-  $('#manual-tasks').innerHTML=manual?(manual.tasks.length?manual.tasks.map(taskCard).join(''):`<article class="card"><p>${esc(manual.feedback||'Selecting untouched questions…')}</p></article>`):'';
+  const manual=Object.values(leetcodeRuns).filter(r=>r.mode==='manual'&&r.date===state.today&&r.username?.toLowerCase()===leetcodeAccount.toLowerCase()).sort((a,b)=>b.startedAt.localeCompare(a.startedAt))[0];
+  manualProgress.render($('#manual-section'),c.leetcode?.enabled?manual:null,manualLaunch?.account===leetcodeAccount?manualLaunch:null);
   const day=state.plan?.days.find(d=>d.date===state.today);
   $('#today-tasks').innerHTML=job?`${job.selectionNote?`<p class="muted">${esc(job.selectionNote)}</p>`:''}${job.tasks.length?job.tasks.map(taskCard).join(''):`<article class="card"><p class="error-text">${esc(job.feedback||'Question discovery has not finished.')}</p></article>`}`:`<article class="card"><span class="eyebrow">DAILY PRACTICE</span><h3>${leetcodeAccount?'Scheduled for '+leetcodeAccount:'LeetCode login required'}</h3><p>${leetcodeAccount?`Questions will be selected at ${esc(c.dailyStartTime)}.`:'Sign in to LeetCode in this browser profile to start automatic practice.'}</p>${pill('Scheduled','pending')}</article>`;
   $('#notifications').innerHTML=state.notifications.length?state.notifications.slice(0,12).map(n=>`<div class="notice ${n.kind==='error'?'error':''}"><div><strong>${esc(n.title)}</strong><p>${esc(n.message)}</p></div><time>${esc(formatDate(n.createdAt,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}))}</time></div>`).join(''):'<p class="empty">Your next session will appear here.</p>';
@@ -134,14 +133,24 @@ $('#connect-form').addEventListener('submit',async e=>{
 });
 function populateCatalog(){const select=$('#contest-questions');if(select)select.innerHTML=catalog.map(p=>`<option value="${esc(p.id)}">${esc(p.title)} — ${esc(p.difficulty)}</option>`).join('');}
 $('#refresh').addEventListener('click',refresh);
-$('#manual-count').addEventListener('input',()=>{$('#manual-count').value=getManualCount();$('#run-now').textContent=`▶ ${state.config.reviewBeforeSubmit?'Prepare':'Solve & submit'} ${getManualCount()} now`;if(extension)chrome.storage.local.set({manualQuestionCount:getManualCount()});});
+$('#manual-count').addEventListener('input',()=>{$('#manual-count').value=getManualCount();$('#run-now').textContent=`▶ Solve & submit ${getManualCount()} now`;if(extension)chrome.storage.local.set({manualQuestionCount:getManualCount()});});
 $('#run-now').addEventListener('click',async()=>{
-  if(busy)return;
+  if(busy||manualStarting)return;
   if(!state.config.leetcode?.enabled){await action(()=>api('run',{}));return;}
   if(!extension){toast('Open the Practice Ex. extension in your signed-in browser to solve LeetCode questions');return;}
-  $('#run-now').disabled=true;
   const count=getManualCount();
-  try{const result=await chrome.runtime.sendMessage({type:'run-leetcode-now',count});if(!result?.ok)throw Error(result?.error||'Could not start');toast(result.started?`Preparing ${count} new practice drafts`:result.reason||'A session is already running');}catch(error){toast(error.message);}finally{await refresh();}
+  manualStarting=true;
+  manualLaunch={count,account:leetcodeAccount,startedAt:new Date().toISOString()};
+  manualProgress.render($('#manual-section'),null,manualLaunch);
+  $('#run-now').disabled=true;
+  try{
+    const result=await chrome.runtime.sendMessage({type:'run-leetcode-now',count});
+    if(!result?.ok)throw Error(result?.error||'Could not start');
+    if(!result.started)throw Error(result.reason||'A session is already running');
+    manualLaunch.id=result.id;
+    toast(`Solving and submitting ${count} questions`);
+  }catch(error){manualLaunch.error=error.message;manualProgress.render($('#manual-section'),null,manualLaunch);toast(error.message);}
+  finally{manualStarting=false;await refresh();}
 });
 $('#retry-daily').addEventListener('click',async()=>{
   const button=$('#retry-daily');button.disabled=true;

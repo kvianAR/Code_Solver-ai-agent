@@ -288,7 +288,7 @@ async function poll(){
     let diagnostic={kind:'scheduled',message:`Scheduled for ${state.config.dailyStartTime} ${state.config.timezone}.`,updatedAt:new Date().toISOString()};
     if(state.config.leetcode?.enabled){
       handleContests().catch(()=>{});
-      if(accountVerified&&!runner.active){const pending=manualRetryRun(leetcodeRuns,state.config,account);if(pending)startRun(state.config,true,pending.target,account);}
+      if(accountVerified&&!runner.active){const pending=manualRetryRun(leetcodeRuns,state.config,account);if(pending)startRun({...state.config,reviewBeforeSubmit:pending.reviewBeforeSubmit??state.config.reviewBeforeSubmit},true,pending.target,account);}
       const scheduleMoved=account&&state.config.autoMode&&shouldRetryForLaterSchedule(live,state.config);
       let movedRetryNumber=1;
       if(scheduleMoved&&!runner.active){
@@ -434,7 +434,7 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
       const state=await serverApi(connection,'state');
       const account=await explicitAccount();
       const count=Math.max(1,Math.min(100,Math.trunc(Number(message.count)||2)));
-      return {ok:true,...startRun(state.config,true,count,account)};
+      return {ok:true,...startRun({...state.config,reviewBeforeSubmit:false},true,count,account)};
     })().then(sendResponse).catch(async error=>{if(!runner.active)await closeAgentLeetCodeTab().catch(()=>{});sendResponse({ok:false,error:error.message});});
     return true;
   }
