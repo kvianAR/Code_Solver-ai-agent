@@ -8,7 +8,7 @@
     if(!f.contains(document.activeElement)){
       for(const key of ['additionalChecks','adaptivePractice'])f.elements[key].checked=c[key]!==false;
       for(const key of ['sessionTokenBudget','maxSessionCalls','dailyCostBudgetUSD'])f.elements[key].value=c[key]??(key==='sessionTokenBudget'?100000:key==='maxSessionCalls'?32:0);
-      for(const p of ['groq','gemini']){f.elements[p+'Input'].value=c.providerPricing?.[p]?.inputPerMillion??'';f.elements[p+'Output'].value=c.providerPricing?.[p]?.outputPerMillion??'';}
+      for(const p of ['groq','gemini','coarena']){f.elements[p+'Input'].value=c.providerPricing?.[p]?.inputPerMillion??'';f.elements[p+'Output'].value=c.providerPricing?.[p]?.outputPerMillion??'';}
     }
     const profile=practicePlanner.profile(leetcodeRuns,leetcodeAccount,state.today);
     $('#practice-focus').textContent=profile.weakTopics.length?'Focus topics: '+profile.weakTopics.join(', '):'Record practice outcomes to build topic recommendations.';
@@ -44,7 +44,7 @@
   $('#advanced-settings').addEventListener('submit',event=>{
     event.preventDefault();const f=event.currentTarget;
     action(async()=>{
-      const pricing={};for(const p of ['groq','gemini']){const input=f.elements[p+'Input'].value,output=f.elements[p+'Output'].value;if((input==='')!==(output===''))throw Error('Enter both input and output prices, or leave both blank');pricing[p]=input===''?null:{inputPerMillion:Number(input),outputPerMillion:Number(output)};}
+      const pricing={};for(const p of ['groq','gemini','coarena']){const input=f.elements[p+'Input'].value,output=f.elements[p+'Output'].value;if((input==='')!==(output===''))throw Error('Enter both input and output prices, or leave both blank');pricing[p]=input===''?null:{inputPerMillion:Number(input),outputPerMillion:Number(output)};}
       await api('config',{additionalChecks:f.elements.additionalChecks.checked,adaptivePractice:f.elements.adaptivePractice.checked,sessionTokenBudget:Number(f.elements.sessionTokenBudget.value),maxSessionCalls:Number(f.elements.maxSessionCalls.value),dailyCostBudgetUSD:Number(f.elements.dailyCostBudgetUSD.value),providerPricing:pricing});
     });
   });

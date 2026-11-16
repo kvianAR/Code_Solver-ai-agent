@@ -80,3 +80,20 @@ test('provider retry deadlines accept HTTP dates and are not shortened to five m
  try{globalThis.fetch=async()=>new Response('temporarily unavailable',{status:503,headers:{'retry-after':deadline}});await assert.rejects(requestJSON('https://provider.example'),error=>error.kind==='temporary'&&error.retryAfter>=598);
  }finally{globalThis.fetch=original;}
 });
+
+test('Coarena uses its documented OpenAI-compatible endpoint and bearer key',async()=>{
+ const original=globalThis.fetch;
+ try{
+  globalThis.fetch=async(url,options)=>{
+   assert.equal(url,'https://coarena.ai/api/v1/chat/completions');
+   assert.equal(options.headers.Authorization,'Bearer coarena-test-key');
+   const body=JSON.parse(options.body);assert.equal(body.model,'claude-fable-5-2');assert.equal(body.messages[0].content,'Return JSON');assert.equal(body.max_tokens,128);
+   return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:'{"code":"complete"}'}}],usage:{prompt_tokens:5,completion_tokens:7,total_tokens:12}}));
+  };
+  const result=await complete('coarena','coarena-test-key','claude-fable-5-2','Return JSON',config);
+  assert.equal(result.text,'{"code":"complete"}');assert.equal(result.tokens,12);
+  const {listModels}=await import('../server/providers.mjs');
+  globalThis.fetch=async(url,options)=>{assert.equal(url,'https://coarena.ai/api/v1/models');assert.equal(options.headers.Authorization,'Bearer coarena-test-key');return new Response(JSON.stringify({data:[{id:'model-b'},{id:'model-a'}]}));};
+  assert.deepEqual(await listModels('coarena','coarena-test-key',config),['model-a','model-b']);
+ }finally{globalThis.fetch=original;}
+});

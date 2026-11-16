@@ -5,6 +5,7 @@ export function localBase(config){
 }
 export function providerModel(config,provider){return provider==='local'?config.localAI.model:config.models[provider];}
 export function providerOrder(config,avoid=''){
+  if(config.providerOrder.length===1&&config.providerOrder[0]==='coarena')return ['coarena'];
   let order=[...config.providerOrder];
   if(config.localAI?.enabled){
     order=!config.localAI.cloudFallback?['local']:config.localAI.preference==='cloud-first'?[...order,'local']:['local',...order];

@@ -1,6 +1,6 @@
 import {retryTime,bridgeError} from './retry-policy.js';
 import {acceptedDailyTasks,dailyQotdDisposition,deadlineNotice,connectionHealth} from './daily-recovery.js';
-import {LeetCodeRunner, manualRetryRun, repairQotdPreparation, qotdSatisfied, archiveRetryableAutomaticRun, automaticRetryDecision, dailyRunForAccount, latestArchivedAutomaticRun, localClock, readinessTarget, loginPrecheckDue, shouldRetryForLaterSchedule} from './leetcode-runner.js';
+import {LeetCodeRunner, manualRetryRun, repairQotdPreparation, repairQuestionForProviderChange, qotdSatisfied, archiveRetryableAutomaticRun, automaticRetryDecision, dailyRunForAccount, latestArchivedAutomaticRun, localClock, readinessTarget, loginPrecheckDue, shouldRetryForLaterSchedule} from './leetcode-runner.js';
 import {activeContest,contestRefreshDue} from './contest-calendar.js';
 import './connection.js';
 import './practice-plan.js';
@@ -299,6 +299,12 @@ async function poll(){
           live=undefined;
         }
       }
+      if(live&&!runner.active&&state.providers?.coarena?.configured&&!state.disabledProviders?.coarena&&
+        !(Date.parse(state.providerCooldowns?.coarena?.until)>Date.now())&&repairQuestionForProviderChange(live,state.config)){
+        delete live.reviewRequired;delete live.reviewReason;
+        live.status='retrying';live.nextRetryAt=new Date().toISOString();
+        await chrome.storage.local.set({leetcodeRuns});
+      }
       const previousRun=live||recovered;
       const decision=automaticRetryDecision(previousRun,state.config);
       const providerReady=!state.providers||[...(state.config.localAI?.enabled&&!state.config.localAI.cloudFallback?[]:state.config.providerOrder),...(state.config.localAI?.enabled?['local']:[])].some(p=>state.providers[p]?.configured&&!state.disabledProviders?.[p]);
@@ -463,6 +469,7 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
       if(!run||!['blocked','waiting','retrying','failed','stopped','interrupted'].includes(run.status))throw Error('No failed automatic run to retry today');
       if(runner.active)throw Error('Another session is already running');
       repairQotdPreparation(run,state.config);
+      repairQuestionForProviderChange(run,state.config);
       const archiveId=`automatic-history:${clock.date}:${crypto.randomUUID()}`;
       if(!archiveRetryableAutomaticRun(leetcodeRuns,run.id||clock.date,archiveId))throw Error('Could not archive the previous run');
       await chrome.storage.local.set({leetcodeRuns});

@@ -114,7 +114,7 @@ export function createServer(store,platform,agent,options={}) {
         send(200,await diagnostics(store));
       }else if(route==='GET /api/provider-models'){
         const provider=url.searchParams.get('provider');
-        if(!['groq','gemini'].includes(provider)||!store.secret(provider))throw Error('Save a provider key first');
+        if(!['groq','gemini','coarena'].includes(provider)||!store.secret(provider))throw Error('Save a provider key first');
         send(200,{models:await listModels(provider,store.secret(provider),store.state.config)});
       }else if(route==='GET /api/leetcode/contests'){
         send(200,await refreshOfficialContests(store,{force:url.searchParams.get('force')==='1'}));
@@ -123,17 +123,17 @@ export function createServer(store,platform,agent,options={}) {
         const input=await body(req);const old=store.state.config;
         if(agent.running.size&&(['language','platform'].some(k=>JSON.stringify(input[k]??old[k])!==JSON.stringify(old[k]))))throw Error('Pause and finish active work before changing language or platform');
         store.state.config=validateConfig({...old,...input,models:{...old.models,...input.models},platform:{...old.platform,...input.platform},judge:{...old.judge,...input.judge},providerPricing:{...old.providerPricing,...input.providerPricing},localAI:{...old.localAI,...input.localAI},leetcode:{...old.leetcode,...input.leetcode}});
-        for(const provider of ['groq','gemini'])if(input.models?.[provider]&&input.models[provider]!==old.models[provider]){delete store.state.disabledProviders[provider];delete store.state.providerHealth[provider];delete store.state.providerCooldowns[provider];if(!input.providerPricing?.[provider])store.state.config.providerPricing[provider]=null;}
+        for(const provider of ['groq','gemini','coarena'])if(input.models?.[provider]&&input.models[provider]!==old.models[provider]){delete store.state.disabledProviders[provider];delete store.state.providerHealth[provider];delete store.state.providerCooldowns[provider];if(!input.providerPricing?.[provider])store.state.config.providerPricing[provider]=null;}
         if(input.groqBaseUrl&&input.groqBaseUrl!==old.groqBaseUrl){delete store.state.disabledProviders.groq;delete store.state.providerHealth.groq;delete store.state.providerCooldowns.groq;store.state.config.providerPricing.groq=null;}
         if(input.localAI){delete store.state.disabledProviders.local;delete store.state.providerCooldowns.local;delete store.state.providerHealth.local;}
         store.state.dailyReadiness={};store.save();
         await buildPlan(store,platform,localTime(new Date(),store.state.config.timezone).date);agent.resumeBlocked();send(200,{ok:true});
       }else if(route==='POST /api/keys') {
-        const {provider,key}=await body(req);if(!['groq','gemini','platform','local'].includes(provider))throw Error('Unknown provider');
+        const {provider,key}=await body(req);if(!['groq','gemini','coarena','platform','local'].includes(provider))throw Error('Unknown provider');
         if(typeof key!=='string'||key.length>1000)throw Error('Invalid key');
         store.setSecret(provider,key.trim());agent.resumeBlocked();send(200,{ok:true});
       }else if(route==='POST /api/provider-test') {
-        const {provider}=await body(req);if(!['groq','gemini'].includes(provider))throw Error('Unknown provider');
+        const {provider}=await body(req);if(!['groq','gemini','coarena'].includes(provider))throw Error('Unknown provider');
         if(!store.secret(provider))throw Error('Save a key first');
         // This explicit connection test is a paid API call and is counted against the budget.
         const c=store.state.config,d=localTime(new Date(),c.timezone).date;

@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.3.7 — Coarena model API and exclusive provider mode
+
+- Add encrypted Coarena key storage, model catalog loading, selectable model, connection testing and usage/pricing diagnostics using https://coarena.ai/api/v1. Existing settings gain Coarena after Groq and Gemini.
+- Add Only Coarena mode and a Groq → Coarena option. Exclusive generation uses only the selected Coarena model, including when local AI is enabled or the provider fails. Persist the mode across restarts.
+- Reopen a bounded preparation window for the same pending question when provider/model configuration changes. Retain prior algorithm failures and daily judged submission history, reject unknown-result repairs, and avoid reusing a stale provider draft. A configured Coarena provider can trigger automatic recovery; identical configuration cannot repeatedly reopen the window.
+- Load available models after saving a newly pasted key. Default the initial Coarena model to claude-fable-5-2, confirmed in the public catalog, while allowing users to select another catalog model.
+- Verify ordered fallback, exclusive-mode failures, encrypted storage and settings endpoints with regression tests. Live authenticated generation requires a user-supplied Coarena key.
+
+
 ## 3.3.6 — Resume manual batches and reduce question-selection requests
 
 - Resume interrupted manual batches for the same account, local day and requested count. Retain accepted/reviewed tasks, cached unsent drafts, test checkpoints and daily judged limits. Link retry history so completed descendants cannot restart old retries.

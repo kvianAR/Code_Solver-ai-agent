@@ -11,7 +11,7 @@ export async function diagnostics(store) {
     checks:[
       {id:'server',ok:true,message:'Local server connected',action:''},
       {id:'syntax',ok:syntax.ok,message:syntax.feedback,action:syntax.ok?'':'Install Python 3, or choose JavaScript in Settings'},
-      ...['groq','gemini',...(c.localAI?.enabled?['local']:[])].map(provider=>({id:provider,ok:(provider==='local'?!!c.localAI.model:!!store.secret(provider))&&store.state.providerHealth?.[provider]?.status==='working',
+      ...['groq','gemini','coarena',...(c.localAI?.enabled?['local']:[])].map(provider=>({id:provider,ok:(provider==='local'?!!c.localAI.model:!!store.secret(provider))&&store.state.providerHealth?.[provider]?.status==='working',
         message:!(provider==='local'?c.localAI.model:store.secret(provider))?`${provider}: key not saved`:`${provider}: ${labels[store.state.providerHealth?.[provider]?.status]||'not tested'}`,
         action:'Save a key and use Test connection in Settings'}))
     ]};

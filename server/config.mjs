@@ -3,6 +3,11 @@ import {localBase} from './local-ai.mjs';
 export const DEFAULT = JSON.parse(fs.readFileSync(new URL('../config.json', import.meta.url)));
 export function validateConfig(input) {
   const c = structuredClone(input);
+  if(!c.models?.coarena&&Array.isArray(c.providerOrder)&&!c.providerOrder.includes('coarena')){
+    c.providerOrder.push('coarena');
+  }
+  c.models={coarena:'claude-fable-5-2',...c.models};
+  c.providerPricing={coarena:null,...c.providerPricing};
   c.reviewBeforeSubmit ??= false;
   c.automaticRetryMinutes ??= 60;
   c.groqBaseUrl ??= 'https://api.groq.com/openai/v1';
@@ -17,7 +22,7 @@ export function validateConfig(input) {
   if(typeof c.additionalChecks!=='boolean'||typeof c.adaptivePractice!=='boolean')throw Error('Invalid practice controls');
   if(!Number.isInteger(c.sessionTokenBudget)||c.sessionTokenBudget<1000||c.sessionTokenBudget>1000000||!Number.isInteger(c.maxSessionCalls)||c.maxSessionCalls<1||c.maxSessionCalls>1000)throw Error('Invalid session budget');
   if(!Number.isFinite(c.dailyCostBudgetUSD)||c.dailyCostBudgetUSD<0||c.dailyCostBudgetUSD>10000)throw Error('Invalid cost budget');
-  for(const p of ['groq','gemini'])if(c.providerPricing[p]!==null&&c.providerPricing[p]!==undefined){const rate=c.providerPricing[p];if(!rate||!['inputPerMillion','outputPerMillion'].every(k=>Number.isFinite(rate[k])&&rate[k]>=0&&rate[k]<=10000))throw Error('Enter valid input and output prices');}
+  for(const p of ['groq','gemini','coarena'])if(c.providerPricing[p]!==null&&c.providerPricing[p]!==undefined){const rate=c.providerPricing[p];if(!rate||!['inputPerMillion','outputPerMillion'].every(k=>Number.isFinite(rate[k])&&rate[k]>=0&&rate[k]<=10000))throw Error('Enter valid input and output prices');}
   if(typeof c.reviewBeforeSubmit!=='boolean')throw Error('Invalid review setting');
   if(!Number.isInteger(c.automaticRetryMinutes)||c.automaticRetryMinutes<15||c.automaticRetryMinutes>240)throw Error('Retry interval must be 15–240 minutes');
   const base=new URL(c.groqBaseUrl);
@@ -30,8 +35,8 @@ export function validateConfig(input) {
   if (!['python','javascript'].includes(c.language)) throw Error('Language must be python or javascript');
   if (!['natural','direct'].includes(c.ownedSolutionStyle)) throw Error('Invalid owned test solution style');
   if (!Array.isArray(c.allowedDifficulties) || !c.allowedDifficulties.length || c.allowedDifficulties.some(x=>!['Easy','Medium','Hard'].includes(x))) throw Error('Choose at least one difficulty');
-  if (!Array.isArray(c.providerOrder) || !c.providerOrder.length || new Set(c.providerOrder).size !== c.providerOrder.length || c.providerOrder.some(x=>!['groq','gemini'].includes(x))) throw Error('Invalid providers');
-  for (const p of ['groq','gemini']) if (typeof c.models?.[p] !== 'string' || !/^[a-zA-Z0-9._\/-]{1,120}$/.test(c.models[p])) throw Error(`Invalid ${p} model`);
+  if (!Array.isArray(c.providerOrder) || !c.providerOrder.length || new Set(c.providerOrder).size !== c.providerOrder.length || c.providerOrder.some(x=>!['groq','gemini','coarena'].includes(x))) throw Error('Invalid providers');
+  for (const p of ['groq','gemini','coarena']) if (typeof c.models?.[p] !== 'string' || !/^[a-zA-Z0-9._\/-]{1,120}$/.test(c.models[p])) throw Error(`Invalid ${p} model`);
   if (!['sandbox','http'].includes(c.platform?.type)) throw Error('Unknown platform');
   if (c.platform.type === 'http' && !/^https?:\/\//.test(c.platform.baseUrl)) throw Error('Platform URL required');
   if (c.notificationWebhook && !c.notificationWebhook.startsWith('https://')) throw Error('Webhook must use HTTPS');

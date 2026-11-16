@@ -347,3 +347,62 @@ test('provider cooldown metadata reaches clients and authenticated heartbeat exp
  assert.equal((await fetch(url+'/api/extension/heartbeat',{method:'POST',headers,body:JSON.stringify({instanceId:'fixture-profile',version:'0.0.1',status:'idle',stage:'idle',accepted:0,target:2,reason:'none'})})).status,200);
  const state=await fetch(url+'/api/state',{headers}).then(r=>r.json());assert.equal(state.extensionHealth[0].versionMatches,false);assert.equal(state.extensionHealth[0].fresh,true);
 });
+
+test('Coarena key stays encrypted and legacy settings gain third fallback on reload',t=>{
+ const {store,dir}=fixture(t);store.state.config.providerOrder=['groq','gemini'];delete store.state.config.models.coarena;store.save();
+ const upgraded=new Store(dir);assert.deepEqual(upgraded.state.config.providerOrder,['groq','gemini','coarena']);
+ upgraded.setSecret('coarena','private-coarena-key');assert.ok(!fs.readFileSync(path.join(dir,'state.json'),'utf8').includes('private-coarena-key'));
+ assert.ok(!JSON.stringify(upgraded.publicState()).includes('private-coarena-key'));assert.equal(upgraded.publicState().providers.coarena.configured,true);
+ upgraded.state.config.providerOrder=['coarena'];upgraded.save();assert.deepEqual(new Store(dir).state.config.providerOrder,['coarena']);
+});
+test('solve route falls back Groq then Gemini then Coarena and Coarena-only never calls other providers',async t=>{
+ for(const only of [false,true]){
+  const calls=[];const {store,platform,agent}=fixture(t,{complete:async(provider)=>{
+   calls.push(provider);if(provider!=='coarena')throw new ProviderError('Provider temporarily unavailable','temporary');
+   return {text:JSON.stringify({code:'class Solution: pass',approach:'linear-scan'}),tokens:30};
+  }});
+  store.state.config.leetcode.enabled=true;store.state.config.providerOrder=only?['coarena']:['groq','gemini','coarena'];
+  store.state.config.localAI={...store.state.config.localAI,enabled:only,model:'test-local'};
+  for(const provider of ['groq','gemini','coarena'])store.setSecret(provider,'fake-'+provider);
+  const server=createServer(store,platform,agent);await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+  const url='http://127.0.0.1:'+server.address().port,headers={Authorization:'Bearer '+store.state.adminToken,'Content-Type':'application/json'};
+  const response=await fetch(url+'/api/leetcode/solve',{method:'POST',headers,body:JSON.stringify({problem:{title:'Example',statement:'Return n',starterCode:'class Solution: pass'},sessionId:'coarena-fallback',automatic:true})});
+  const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));assert.equal(body.provider,'coarena');assert.deepEqual(calls,only?['coarena']:['groq','gemini','coarena']);
+  assert.equal(store.state.providerActivity.fallbackFrom,only?null:'groq');
+ }
+});
+test('Coarena-only failure cannot use a healthy Groq or local backup',async t=>{
+ const calls=[];const {store,platform,agent}=fixture(t,{complete:async provider=>{calls.push(provider);throw new ProviderError('Provider temporarily unavailable','temporary');}});
+ store.state.config.leetcode.enabled=true;store.state.config.providerOrder=['coarena'];store.state.config.localAI.enabled=true;store.state.config.localAI.model='local-coder';
+ for(const provider of ['groq','gemini','coarena'])store.setSecret(provider,'fake-'+provider);
+ const server=createServer(store,platform,agent);await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+ const response=await fetch('http://127.0.0.1:'+server.address().port+'/api/leetcode/solve',{method:'POST',headers:{Authorization:'Bearer '+store.state.adminToken,'Content-Type':'application/json'},body:JSON.stringify({problem:{title:'Example',statement:'Return n',starterCode:'class Solution: pass'},automatic:true})});
+ assert.equal(response.status,503);assert.deepEqual(calls,['coarena']);
+});
+
+test('settings endpoints save Coarena keys and a selectable single-provider model',async t=>{
+ const {store,platform,agent,dir}=fixture(t);
+ const server=createServer(store,platform,agent);await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+ const url='http://127.0.0.1:'+server.address().port,headers={Authorization:'Bearer '+store.state.adminToken,'Content-Type':'application/json'};
+ const key=await fetch(url+'/api/keys',{method:'POST',headers,body:JSON.stringify({provider:'coarena',key:'secret-coarena-fixture'})});assert.equal(key.status,200);
+ const config=await fetch(url+'/api/config',{method:'POST',headers,body:JSON.stringify({providerOrder:['coarena'],models:{coarena:'selected-model'}})});assert.equal(config.status,200);
+ const state=await fetch(url+'/api/state',{headers}).then(r=>r.json());assert.equal(state.providers.coarena.configured,true);assert.equal(state.config.models.coarena,'selected-model');assert.deepEqual(state.config.providerOrder,['coarena']);
+ assert.ok(!JSON.stringify(state).includes('secret-coarena-fixture'));assert.ok(!fs.readFileSync(path.join(dir,'state.json'),'utf8').includes('secret-coarena-fixture'));
+ const deleted=await fetch(url+'/api/keys',{method:'POST',headers,body:JSON.stringify({provider:'coarena',key:''})});assert.equal(deleted.status,200);assert.equal(store.publicState().providers.coarena.configured,false);
+});
+
+test('Groq to Coarena mode excludes Gemini even if Groq is unavailable',async t=>{
+ const calls=[];const {store,platform,agent}=fixture(t,{complete:async provider=>{calls.push(provider);if(provider==='groq')throw new ProviderError('API quota or balance unavailable','quota');return {text:JSON.stringify({code:'class Solution: pass',approach:'linear-scan'}),tokens:30};}});
+ store.state.config.leetcode.enabled=true;store.state.config.providerOrder=['groq','coarena'];
+ for(const provider of ['groq','gemini','coarena'])store.setSecret(provider,'fake-'+provider);
+ const server=createServer(store,platform,agent);await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)));
+ const response=await fetch('http://127.0.0.1:'+server.address().port+'/api/leetcode/solve',{method:'POST',headers:{Authorization:'Bearer '+store.state.adminToken,'Content-Type':'application/json'},body:JSON.stringify({problem:{title:'Example',statement:'Return n',starterCode:'class Solution: pass'},automatic:true})});
+ assert.equal(response.status,200);assert.deepEqual(calls,['groq','coarena']);assert.equal((await response.json()).provider,'coarena');
+});
+
+
+test('legacy imported provider settings migrate to a selectable three-provider order',t=>{
+ const {store}=fixture(t);const legacy=structuredClone(store.state.config);delete legacy.models.coarena;legacy.providerOrder=['groq','gemini'];
+ const updated=validateConfig(legacy);assert.deepEqual(updated.providerOrder,['groq','gemini','coarena']);assert.equal(updated.models.coarena,'claude-fable-5-2');
+ assert.deepEqual(legacy.providerOrder,['groq','gemini']);
+});

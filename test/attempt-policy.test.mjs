@@ -133,3 +133,24 @@ test('local syntax service outage retries the same draft without a permanent rev
  assert.equal(run.status,'retrying');assert.equal(run.reviewRequired,undefined);assert.equal(run.skipCount,0);assert.equal(run.nextRetryAt,'2026-10-28T06:04:00.000Z');
  assert.equal(run.tasks[1].status,'queued');assert.equal(f.calls.submit.length,0);
 });
+
+test('a new provider reopens bounded preparation for the same pending question and retains failed algorithms',async()=>{
+ const {repairQuestionForProviderChange}=await import('../extension/leetcode-runner.js');
+ const f=fixture({preflightFail:slug=>slug==='qotd',required:false});f.runner.start(config,false,2,username);await f.runner.done;
+ const run=Object.values(f.runs)[0];assert.equal(run.reviewReason,'question-needs-repair');
+ const upgraded={...config,providerOrder:['groq','coarena'],models:{groq:'original',coarena:'new-model'}};
+ assert.equal(repairQuestionForProviderChange(run,upgraded),true);assert.equal(run.tasks[0].approachLimit,6);assert.equal(run.tasks[0].approachHistory.length,3);assert.equal(run.tasks[0].preparationFailures,0);
+ assert.equal(repairQuestionForProviderChange(run,upgraded),false);
+ archiveRetryableAutomaticRun(f.runs,run.id,'automatic-history:provider-repair');
+ const retry=fixture({initial:f.runs,required:false});retry.runner.start(upgraded,false,2,username);await retry.runner.done;
+ const recovered=Object.values(retry.runs).find(r=>r.id===run.id);assert.equal(recovered.status,'completed');assert.equal(recovered.skipCount,0);
+ assert.equal(recovered.tasks[0].approachHistory.filter(a=>a.status==='test-failed').length,3);assert.equal(retry.calls.solve[0].plan.number,4);assert.equal(retry.calls.submit.length,2);
+});
+test('provider preparation repair cannot reopen unknown results or an exhausted judged allowance',async()=>{
+ const {repairQuestionForProviderChange}=await import('../extension/leetcode-runner.js');
+ const upgraded={providerOrder:['coarena'],models:{coarena:'new-model'}};
+ for(const fields of [{submissionAttempts:3},{submissionHistory:[{status:'unknown'}]}]){
+  const run={reviewReason:'question-needs-repair',tasks:[{status:'blocked',problem:q('pending'),provider:'groq',...fields}]};
+  assert.equal(repairQuestionForProviderChange(run,upgraded),false);
+ }
+});

@@ -41,6 +41,10 @@ export async function complete(provider,key,model,prompt,config) {
     url=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
     headers['x-goog-api-key']=key;
     body={contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{responseMimeType:'application/json',maxOutputTokens:config.maxOutputTokens}};
+  } else if (provider==='coarena') {
+    url='https://coarena.ai/api/v1/chat/completions';
+    headers.Authorization=`Bearer ${key}`;
+    body={model,messages:[{role:'user',content:prompt}],max_tokens:config.maxOutputTokens};
   } else if (provider==='groq') {
     url=(config.groqBaseUrl||'https://api.groq.com/openai/v1').replace(/\/$/,'')+'/chat/completions';
     headers.Authorization=`Bearer ${key}`;
@@ -55,10 +59,13 @@ export async function complete(provider,key,model,prompt,config) {
   return {text,tokens:provider==='gemini'?r.usageMetadata?.totalTokenCount:r.usage?.total_tokens,inputTokens:provider==='gemini'?r.usageMetadata?.promptTokenCount:r.usage?.prompt_tokens,outputTokens:provider==='gemini'?geminiOutput:r.usage?.completion_tokens};
 }
 export async function listModels(provider,key,config) {
-  const groq=provider==='groq';
-  const url=groq?(config.groqBaseUrl||'https://api.groq.com/openai/v1').replace(/\/$/,'')+'/models':'https://generativelanguage.googleapis.com/v1beta/models';
-  const data=await requestJSON(url,{headers:groq?{Authorization:`Bearer ${key}`}:{'x-goog-api-key':key}},config.requestTimeoutSeconds*1000);
-  const models=groq?(data.data||[]).map(m=>m.id):(data.models||[]).filter(m=>m.supportedGenerationMethods?.includes('generateContent')).map(m=>m.name.replace(/^models\//,''));
+  const openAICompatible=provider==='groq'||provider==='coarena';
+  let url='https://generativelanguage.googleapis.com/v1beta/models';
+  if(provider==='coarena')url='https://coarena.ai/api/v1/models';
+  if(provider==='groq')url=(config.groqBaseUrl||'https://api.groq.com/openai/v1').replace(/\/$/,'')+'/models';
+  const headers=openAICompatible?{Authorization:`Bearer ${key}`}:{'x-goog-api-key':key};
+  const data=await requestJSON(url,{headers},config.requestTimeoutSeconds*1000);
+  const models=openAICompatible?(data.data||[]).map(m=>m.id):(data.models||[]).filter(m=>m.supportedGenerationMethods?.includes('generateContent')).map(m=>m.name.replace(/^models\//,''));
   return models.filter(id=>typeof id==='string').sort();
 }
 export function solutionPrompt(problem,language,feedback='',style='natural') {

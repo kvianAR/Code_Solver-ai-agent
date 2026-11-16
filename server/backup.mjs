@@ -52,6 +52,6 @@ export function restoreBackup(store,input){
 export function supportReport(store,diagnostics){
   return {format:'practice-ex.diagnostics',schemaVersion:1,createdAt:new Date().toISOString(),version:diagnostics.version,node:diagnostics.node,platform:diagnostics.platform,
     checks:diagnostics.checks.map(c=>({id:c.id,ok:!!c.ok})),
-    providers:Object.fromEntries(['groq','gemini',...(store.state.config.localAI?.enabled?['local']:[])].map(p=>[p,{configured:p==='local'?!!store.state.config.localAI.model:!!store.secret(p),status:store.state.providerHealth[p]?.status||'untested'}])),
+    providers:Object.fromEntries(['groq','gemini','coarena',...(store.state.config.localAI?.enabled?['local']:[])].map(p=>[p,{configured:p==='local'?!!store.state.config.localAI.model:!!store.secret(p),status:store.state.providerHealth[p]?.status||'untested'}])),
     recentFailures:store.state.notifications.filter(n=>n.kind==='error').slice(0,10).map(n=>({at:n.createdAt,...globalThis.failureGuide.explain(n.message)}))};
 }

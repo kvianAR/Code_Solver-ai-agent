@@ -14,10 +14,14 @@ export class Store {
     this.state.leetcodeDailyCompletion ||= {};
     this.state.dailyProgress||={};this.state.dailyReadiness||={};this.state.providerCooldowns||={};
     const sourceHash=crypto.createHash('sha256').update(JSON.stringify(DEFAULT)).digest('hex');
+    const needsCoarenaMigration=!this.state.config.models?.coarena;
     // Updates may add defaults, but must preserve saved times and models.
     this.state.config={...structuredClone(DEFAULT),...this.state.config,
       models:{...DEFAULT.models,...this.state.config?.models},
       leetcode:{...DEFAULT.leetcode,...this.state.config?.leetcode}};
+    if(needsCoarenaMigration&&Array.isArray(this.state.config.providerOrder)&&!this.state.config.providerOrder.includes('coarena')){
+      this.state.config.providerOrder.push('coarena');
+    }
     this.state.configSourceHash=sourceHash;
     if (process.env.ADMIN_TOKEN) this.state.adminToken=process.env.ADMIN_TOKEN;
     this.state.config=validateConfig(this.state.config);
@@ -31,6 +35,6 @@ export class Store {
   providerResult(name,status,reason='') { this.state.providerHealth[name]={status,reason,checkedAt:new Date().toISOString()}; this.save(); }
   publicState() {
     const {config,jobs,notifications,contests,plan,usage,disabledProviders,providerHealth,providerActivity}=this.state;
-    return {config,jobs,notifications,contests,plan,usage,disabledProviders,providerHealth,providerActivity,providerCooldowns:this.state.providerCooldowns,providers:{...Object.fromEntries(['groq','gemini'].map(p=>[p,{configured:!!this.secret(p),model:config.models[p]}])),local:{configured:!!config.localAI.enabled&&!!config.localAI.model,model:config.localAI.model}}};
+    return {config,jobs,notifications,contests,plan,usage,disabledProviders,providerHealth,providerActivity,providerCooldowns:this.state.providerCooldowns,providers:{...Object.fromEntries(['groq','gemini','coarena'].map(p=>[p,{configured:!!this.secret(p),model:config.models[p]}])),local:{configured:!!config.localAI.enabled&&!!config.localAI.model,model:config.localAI.model}}};
   }
 }
