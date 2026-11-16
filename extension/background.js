@@ -131,7 +131,7 @@ const runner=new LeetCodeRunner({
     return response.value;
   },
   discover:async options=>{
-    if(options.adaptivePractice&&globalThis.practicePlanner){const {leetcodeRuns={}}=await chrome.storage.local.get('leetcodeRuns');const profile=practicePlanner.profile(leetcodeRuns,options.username,localClock(options.timezone||'Asia/Kolkata').date);options={...options,reviewSlugs:profile.due.map(row=>row.slug).slice(0,10),weakTopics:profile.weakTopics};}
+    if(options.adaptivePractice&&globalThis.practicePlanner){const {leetcodeRuns={}}=await chrome.storage.local.get('leetcodeRuns');const profile=practicePlanner.profile(leetcodeRuns,options.username,localClock(options.timezone||'Asia/Kolkata').date);options={...options,reviewSlugs:options.untouchedOnly?[]:profile.due.map(row=>row.slug).slice(0,10),weakTopics:profile.weakTopics};}
     const response=await leetcodeMessage({type:'leetcode-discover',options},()=>false,true);
     if(!response?.ok)throw bridgeError(response,'Could not read LeetCode');
     return response.value;

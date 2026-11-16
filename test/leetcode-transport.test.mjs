@@ -78,3 +78,31 @@ test('manual discovery filters list metadata before loading only the requested t
   assert.equal(b.requests.length,count+2);
  }
 });
+
+test('normal batches exclude solved QOTD and revision suggestions while selecting the full count of new questions',async()=>{
+ const requested=[];
+ const b=bridge((_url,options)=>{
+  const {query,variables}=JSON.parse(options.body);
+  if(query.includes('globalData'))return ok({data:{userStatus:{isSignedIn:true,username:'Student'}}});
+  if(query.includes('questionOfToday'))return ok({data:{activeDailyCodingChallengeQuestion:{question:{titleSlug:'solved-daily',title:'Solved daily'}}}});
+  if(query.includes('problemsetQuestionList'))return ok({data:{problemsetQuestionList:{total:3,questions:[{titleSlug:'solved-revision',status:'ac',difficulty:'Easy'},...['new-one','new-two'].map(titleSlug=>({titleSlug,status:null,difficulty:'Easy'}))]}}});
+  const slug=variables.titleSlug;requested.push(slug);
+  assert.notEqual(slug,'solved-revision');
+  return ok({data:{question:{questionId:'1',title:slug,titleSlug:slug,content:'Return n',difficulty:'Easy',status:slug==='solved-daily'?'ac':null,exampleTestcases:'1',codeSnippets:[{langSlug:'python3',code:'class Solution: pass'}]}}});
+ });
+ const response=await b.send({type:'leetcode-discover',options:{count:2,language:'python',allowedDifficulties:['Easy'],selectionMode:'roadmap',preferQuestionOfTheDay:true,skipAcceptedQotd:true,untouchedOnly:true,reviewSlugs:['solved-revision']}});
+ assert.equal(response.ok,true,JSON.stringify(response));assert.equal(response.value.qotdAlreadyAccepted,'solved-daily');
+ assert.deepEqual(Array.from(response.value.questions,q=>q.titleSlug).sort(),['new-one','new-two']);assert.equal(requested.length,3);
+});
+
+test('manual current-question solve refuses an already solved question while learning can still load it',async()=>{
+ const b=bridge((_url,options)=>{
+  const {query}=JSON.parse(options.body);
+  if(query.includes('globalData'))return ok({data:{userStatus:{isSignedIn:true,username:'Student'}}});
+  return ok({data:{question:{questionId:'1',title:'Already solved',titleSlug:'two-sum',content:'Return n',status:'ac',difficulty:'Easy',codeSnippets:[{langSlug:'python3',code:'class Solution: pass'}]}}});
+ });
+ const refused=await b.send({type:'leetcode-discover',options:{requestedSlug:'two-sum',untouchedOnly:true,language:'python'}});
+ assert.equal(refused.ok,false);assert.match(refused.error,/already solved/);
+ const learning=await b.send({type:'leetcode-discover',options:{requestedSlug:'two-sum',language:'python'}});
+ assert.equal(learning.ok,true);assert.equal(learning.value.questions[0].status,'ac');
+});

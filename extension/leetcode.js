@@ -64,6 +64,7 @@
       const selected=await question(options.requestedSlug,options.language);
       if(!selected)throw Error('This LeetCode question was not found');
       if(selected.paidOnly)throw Error('This question needs LeetCode Premium');
+      if(options.untouchedOnly&&String(selected.status).toLowerCase()==='ac')throw Error('This question is already solved. Choose an unsolved question.');
       selected.selection='CURRENT TAB';
       return{username:user.username,questions:[selected]};
     }
@@ -88,7 +89,7 @@
       const q=await question(slug,options.language);
       if(q&&!q.paidOnly&&q.status!=='ac'&&allowed.has(q.difficulty)){q.selection='RETRY';chosen.push(q);seen.add(slug);}
     }
-    for(const slug of (options.reviewSlugs||[]).slice(0,10)){
+    for(const slug of (options.untouchedOnly?[]:options.reviewSlugs||[]).slice(0,10)){
       if(chosen.length>=options.count||chosen.some(q=>q.selection==='REVISION'))break;
       if(!/^[a-z0-9-]+$/.test(slug)||(options.acceptedTodaySlugs||[]).includes(slug)||chosen.some(q=>q.titleSlug===slug))continue;
       const q=await question(slug,options.language);if(q&&!q.paidOnly&&allowed.has(q.difficulty)){q.selection='REVISION';chosen.push(q);seen.add(slug);}

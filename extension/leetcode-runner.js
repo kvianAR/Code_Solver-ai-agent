@@ -250,7 +250,7 @@ export class LeetCodeRunner {
       const previousManual=manual&&!requestedSlug&&accountUsername?Object.values(runs)
         .filter(r=>!resumedIds.has(r.id)&&!r.requestedSlug&&r.mode==='manual'&&r.date===clock.date&&r.username?.toLowerCase()===accountUsername.toLowerCase()&&r.target===manualTarget&&['blocked','retrying','waiting','interrupted','failed',...(!config.reviewBeforeSubmit?['review']:[])].includes(r.status))
         .sort((a,b)=>(b.startedAt||'').localeCompare(a.startedAt||''))[0]:null;
-      const manualResume=(previousManual?.tasks||[]).map(task=>{
+      const manualResume=(previousManual?.tasks||[]).filter(task=>task.status==='accepted'||String(task.problem?.status).toLowerCase()!=='ac').map(task=>{
         if(task.status==='accepted'||config.reviewBeforeSubmit&&task.status==='review')return structuredClone(task);
         return {...structuredClone(task),status:'pending',attempts:0,submissionAttempts:0,submissionHistory:[],submittedCodeFingerprints:[],
           cachedDraft:task.solution?.code&&task.verification?.ok?{...task.solution,provider:task.provider}:null};
@@ -284,7 +284,7 @@ export class LeetCodeRunner {
         const discovered = await this.io.discover({username: accountUsername, count,
           enforceUsername: !!accountUsername, adaptivePractice:!easyOnly&&config.adaptivePractice,timezone:config.timezone,
           language: config.language, allowedDifficulties:easyOnly?['Easy']:config.allowedDifficulties,
-          preferQuestionOfTheDay:easyOnly?false:preferQuestionOfTheDay, requireQotd:easyOnly?false:requireQotd, skipAcceptedQotd:!manual, selectionMode:easyOnly?'random':manual?'roadmap':'random', requestedSlug:replacement?'':requestedSlug,
+          preferQuestionOfTheDay:easyOnly?false:preferQuestionOfTheDay, requireQotd:easyOnly?false:requireQotd, skipAcceptedQotd:true, untouchedOnly:true, selectionMode:easyOnly?'random':manual?'roadmap':'random', requestedSlug:replacement?'':requestedSlug,
           retrySlugs:replacement?[]:retrySlugs.filter(slug=>!skipped.has(slug)&&!run.tasks.some(t=>t.problem.titleSlug===slug)),excludeSlugs:[...excludeSlugs], acceptedTodaySlugs:[...acceptedTodaySlugs], completedCount});
         if (active.stop) return false;
         if (accountUsername && discovered.username.toLowerCase() !== accountUsername.toLowerCase()) throw Error('LeetCode account changed during this run. Retry with the account currently signed in.');
@@ -294,7 +294,7 @@ export class LeetCodeRunner {
         const fresh = [];
         for (const problem of discovered.questions || []) {
           if (easyOnly&&(problem.difficulty!=='Easy'||problem.status==='ac'))continue;
-          if (!problem?.titleSlug || (skipped.has(problem.titleSlug)&&problem.selection!=='QOTD') || run.tasks.some(task => task.problem.titleSlug === problem.titleSlug) ||
+          if ((!requestedSlug&&String(problem?.status).toLowerCase()==='ac') || !problem?.titleSlug || (skipped.has(problem.titleSlug)&&problem.selection!=='QOTD') || run.tasks.some(task => task.problem.titleSlug === problem.titleSlug) ||
             fresh.some(item => item.titleSlug === problem.titleSlug)) continue;
           if (requestedSlug !== problem.titleSlug && excludeSlugs.has(problem.titleSlug) &&
             !(problem.selection==='RETRY'&&retrySlugs.includes(problem.titleSlug))&&!(problem.selection==='QOTD'&&(!manual||!acceptedTodaySlugs.has(problem.titleSlug)))&&!(problem.selection==='REVISION'&&!acceptedTodaySlugs.has(problem.titleSlug))) continue;

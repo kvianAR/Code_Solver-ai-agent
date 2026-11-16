@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.3.9 — Select unsolved unique questions for normal batches
+
+- Exclude previously accepted revision questions from normal daily/manual selection. Preserve adaptive topic recommendations while selecting fresh unsolved questions.
+- Exclude already accepted QOTD from manual batches too and fill the requested count with other unsolved questions. Reject solved question data at the runner boundary and discard legacy pending manual tasks already marked accepted on LeetCode.
+- When Solve this question requests an already solved question, show an actionable message. Learning views can still load solved questions for review.
+- Verify that solved revision/QOTD suggestions cannot consume the requested batch count or produce another judged submission.
+
+
 ## 3.3.8 — Visible manual progress and explicit solve-and-submit
 
 - Place a live manual progress panel directly below the controls. Show accepted/target counts, question names, current stage, test and judge failures, retry time and expandable feedback. Count actual accepted tasks as done.

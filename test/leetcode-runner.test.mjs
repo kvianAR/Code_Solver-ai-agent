@@ -604,3 +604,13 @@ test('switching manual review off submits the saved batch without new AI drafts'
  const run=Object.values(f.runs).find(r=>r.status==='completed');assert.ok(run);assert.equal(run.tasks.length,5);
  assert.equal(f.calls.solved,5);assert.equal(f.calls.submitted.length,5);assert.equal(f.calls.discovered.length,1);
 });
+
+test('manual batch requests untouched questions and excludes already solved revision data at the runner boundary',async()=>{
+ const f=fixture({discover:async options=>{
+  f.calls.discovered.push(options);
+  return {username:'Leetcoder071',questions:[{titleSlug:'solved-revision',title:'Old revision',selection:'REVISION',status:'ac'},{titleSlug:'fresh-'+f.calls.discovered.length,title:'New question',selection:'RANDOM',status:null}]};
+ }});
+ f.runner.start({...config,reviewBeforeSubmit:false},true,2,'Leetcoder071');await f.runner.done;
+ const run=Object.values(f.runs)[0];assert.equal(run.status,'completed');assert.equal(f.calls.submitted.length,2);assert.ok(!f.calls.submitted.includes('solved-revision'));
+ assert.ok(f.calls.discovered.every(options=>options.untouchedOnly&&options.skipAcceptedQotd));
+});
